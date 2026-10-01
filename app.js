@@ -29,7 +29,8 @@ const POLL_FAILS_BEFORE_RECONNECT = 3;
 const FRAME7D_EVERY = 2;
 const TEMP_OFFSET_C = 55;
 const FUEL_TRIM_CENTER = 128;
-const KNOWN_ECU_IDS = { '9A 00 02 02': 'MEMS 1.3 検出' };
+// 実車で確認できたECU型番だけ名前で出す（それ以外は生のIDを表示。Android版 EcuVersion.kt と同じ）
+const MEMS13_ECU_IDS = ['9A 00 02 02'];
 
 // グラフ（GaugeViewModel.MAX_HISTORY_SIZE と同じ）
 const MAX_HISTORY_SIZE = 150;
@@ -44,78 +45,266 @@ const NIGHT_START_HOUR = 18;
 const NIGHT_END_HOUR = 6;
 
 // =====================================================================
-// 表示項目（文言は Android版 strings.xml と同じ）
+// 文言（Android版 values/strings.xml と values-en/strings.xml と同じ。
+// iPhone版だけにある文言は同じ調子で追加）。既定は日本語（LocaleManager.kt と同じ）
+// =====================================================================
+
+const I18N = {
+  ja: {
+    appTitle: 'ローバーミニ MEMS診断',
+    langToggle: 'EN',
+    lead: 'Bluetoothアダプター（ATOM Lite）経由で、エンジンのコンピューター（MEMS 1.3）のデータを表示します。',
+    connectBt: 'Bluetoothで接続',
+    chooseOther: '別のアダプターを選ぶ',
+    reconnect: 'もう一度つなぐ',
+    startDemo: 'デモモードで開始',
+    openLogs: '保存したログを見る',
+    demoNote: 'デモモード: 実車やケーブルが無くても、サンプルデータでアプリの画面をお試しいただけます。',
+    noBluetooth: 'このブラウザはBluetoothに対応していません。iPhoneでは「Bluefy」、AndroidではChromeで開いてください。デモモードと保存したログはこのままお試しいただけます。',
+    connectFailed: '接続に失敗しました。配線・電源・ECUの状態を確認してもう一度お試しください。',
+    connectionLost: '接続が切れました。キーがONになっているか確認して、もう一度つないでください。',
+    btError: 'Bluetoothのエラー: {0}',
+    modeSimple: 'シンプル',
+    modeDetail: '詳細',
+    modeCharts: 'グラフ',
+    modeAnalog: 'アナログ',
+    logList: 'ログ一覧',
+    clearFaults: 'エラークリア',
+    clearOk: 'エラーコードをクリアしました',
+    clearNg: 'クリアに失敗しました',
+    recording: '記録中: {0}',
+    waiting: 'データ待機中…',
+    disconnect: '切断',
+    exitDemo: '終了',
+    statusDisconnected: '未接続',
+    statusConnecting: '接続中…',
+    statusMems13: 'MEMS 1.3 検出',
+    statusUnknown: 'MEMS 接続済み(ID: {0})',
+    statusReconnecting: '再接続中…',
+    statusDemo: 'デモモード',
+    faultBannerNg: 'センサーエラー・詳細を確認',
+    faultBannerOk: 'センサーエラーなし',
+    faultSection: 'センサーエラー診断',
+    faultError: 'エラーあり',
+    faultNormal: '正常',
+    enabled: '有効',
+    disabled: '無効',
+    chartsNotEnough: 'グラフに表示するデータがまだ足りません',
+    selectGauge: '表示するメーターを選択',
+    cancel: 'キャンセル',
+    close: '閉じる',
+    back: '戻る',
+    refresh: '更新',
+    share: '共有',
+    delete: '削除',
+    viewChart: 'グラフで見る',
+    actuatorTitle: '部品テスト',
+    actuatorDesc: '各部品・センサーを手動でテストできます。ONにすると正常ならリレーの動作音がします。',
+    canTest: 'テスト可能',
+    cannotTest: 'エンジン停止時のみ',
+    runTest: 'テスト実行',
+    actDone: '{0}: 実行しました',
+    actFailed: '{0}: 実行に失敗しました',
+    fanNote: '電動ファンはECU制御ではありません',
+    logsTitle: '記録済みログ',
+    logsNote: 'このiPhone（Bluefy）の中に保存されたログです。最大50件まで、古い順に自動で削除されます。',
+    logsEmpty: 'まだログがありません',
+    recordingTag: '記録中',
+    deleteConfirm: '{0} を削除しますか？',
+    loading: '読み込み中…',
+    noChartData: 'グラフに表示できるデータがありません',
+    diagTitle: '診断用の記録',
+    diagRaw: '送受信を全部記録する',
+    copyLog: '記録をコピー',
+    clearLog: '記録を消す',
+    copied: 'コピーしました',
+    selected: '選択しました（コピーしてください）',
+    testPage: '接続テスト用ページ',
+    rate: '更新: 毎秒 {0} 回',
+  },
+  en: {
+    appTitle: 'Rover Mini MEMS Diagnostics',
+    langToggle: 'JA',
+    lead: 'Shows data from the engine computer (MEMS 1.3) through the Bluetooth adapter (ATOM Lite).',
+    connectBt: 'Connect via Bluetooth',
+    chooseOther: 'Choose another adapter',
+    reconnect: 'Reconnect',
+    startDemo: 'Start Demo Mode',
+    openLogs: 'View Saved Logs',
+    demoNote: 'Demo Mode: Try the app\'s screens with sample data, even without a real car or cable.',
+    noBluetooth: 'This browser doesn\'t support Bluetooth. On iPhone, open this page in "Bluefy"; on Android, use Chrome. Demo Mode and saved logs still work here.',
+    connectFailed: 'Connection failed. Please check the wiring, power, and ECU, then try again.',
+    connectionLost: 'Connection lost. Check that the ignition key is ON, then connect again.',
+    btError: 'Bluetooth error: {0}',
+    modeSimple: 'Simple',
+    modeDetail: 'Detailed',
+    modeCharts: 'Charts',
+    modeAnalog: 'Analog',
+    logList: 'Log List',
+    clearFaults: 'Clear Errors',
+    clearOk: 'Fault codes cleared',
+    clearNg: 'Clear failed',
+    recording: 'Recording: {0}',
+    waiting: 'Waiting for data…',
+    disconnect: 'Disconnect',
+    exitDemo: 'Exit',
+    statusDisconnected: 'Disconnected',
+    statusConnecting: 'Connecting…',
+    statusMems13: 'MEMS 1.3 Detected',
+    statusUnknown: 'MEMS Connected (ID: {0})',
+    statusReconnecting: 'Reconnecting…',
+    statusDemo: 'Demo Mode',
+    faultBannerNg: 'Sensor error - see Detailed',
+    faultBannerOk: 'No sensor errors',
+    faultSection: 'Sensor Error Diagnostics',
+    faultError: 'Error',
+    faultNormal: 'Normal',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    chartsNotEnough: 'Not enough data yet to show a chart',
+    selectGauge: 'Select gauge to display',
+    cancel: 'Cancel',
+    close: 'Close',
+    back: 'Back',
+    refresh: 'Refresh',
+    share: 'Share',
+    delete: 'Delete',
+    viewChart: 'View Chart',
+    actuatorTitle: 'Component Test',
+    actuatorDesc: 'Manually test individual components and sensors. Turning one ON should click the relay if it\'s working.',
+    canTest: 'Tests available',
+    cannotTest: 'Engine must be stopped',
+    runTest: 'Run Test',
+    actDone: '{0}: Done',
+    actFailed: '{0}: Failed',
+    fanNote: 'Electric fans aren\'t controlled by the ECU',
+    logsTitle: 'Saved Logs',
+    logsNote: 'Logs saved inside Bluefy on this iPhone. Up to 50 are kept; the oldest are deleted automatically.',
+    logsEmpty: 'No logs yet',
+    recordingTag: 'Recording',
+    deleteConfirm: 'Delete {0}?',
+    loading: 'Loading…',
+    noChartData: 'No data available to chart',
+    diagTitle: 'Diagnostic log',
+    diagRaw: 'Record every byte sent and received',
+    copyLog: 'Copy log',
+    clearLog: 'Clear log',
+    copied: 'Copied',
+    selected: 'Selected (please copy it)',
+    testPage: 'Connection test page',
+    rate: 'Updates: {0} per second',
+  },
+};
+let lang = store('lang') === 'en' ? 'en' : 'ja';
+function t(key, ...args) {
+  let s = I18N[lang][key] ?? I18N.ja[key] ?? key;
+  args.forEach((a, i) => { s = s.replace(`{${i}}`, a); });
+  return s;
+}
+// { ja, en } の組から今の言語のほうを取る
+function tx(pair) { return pair[lang] ?? pair.ja; }
+
+// =====================================================================
+// 表示項目（文言は Android版 strings.xml / values-en と同じ）
 // =====================================================================
 
 const METRICS = {
   rpm: {
-    label: 'RPM', fmt: (d) => `${d.rpm}`,
-    desc: 'エンジンの回転数(1分間あたりの回転数)です。',
-    range: '目安: アイドリング中は750〜1000rpm程度',
+    label: { ja: 'RPM', en: 'RPM' }, fmt: (d) => `${d.rpm}`,
+    desc: { ja: 'エンジンの回転数(1分間あたりの回転数)です。', en: 'Engine speed, in revolutions per minute.' },
+    range: { ja: '目安: アイドリング中は750〜1000rpm程度', en: 'Typical: around 750-1000 rpm at idle' },
   },
   map: {
-    label: 'MAP(kPa)', fmt: (d) => `${d.map}`,
-    desc: '吸気マニホールド内の圧力です。数値が低いほど負圧(スロットルが閉じている)、大気圧(約100kPa)に近いほどアクセル全開に近い状態です。',
-    range: '目安: アイドリング中は25〜45kPa、全開付近で90kPa以上',
+    label: { ja: 'MAP(kPa)', en: 'MAP(kPa)' }, fmt: (d) => `${d.map}`,
+    desc: {
+      ja: '吸気マニホールド内の圧力です。数値が低いほど負圧(スロットルが閉じている)、大気圧(約100kPa)に近いほどアクセル全開に近い状態です。',
+      en: 'Pressure inside the intake manifold. Lower means more vacuum (throttle closed); closer to atmospheric (about 100kPa) means closer to wide-open throttle.',
+    },
+    range: { ja: '目安: アイドリング中は25〜45kPa、全開付近で90kPa以上', en: 'Typical: 25-45kPa at idle, 90kPa+ near wide-open throttle' },
   },
   tps: {
-    label: 'TPS(V)', fmt: (d) => d.tpsV.toFixed(2),
-    desc: 'スロットルポジションセンサー(アクセル開度)の電圧です。',
-    range: '目安: アクセルを離した状態で0.3〜0.7V、全開でおよそ4.0V以上',
+    label: { ja: 'TPS(V)', en: 'TPS(V)' }, fmt: (d) => d.tpsV.toFixed(2),
+    desc: { ja: 'スロットルポジションセンサー(アクセル開度)の電圧です。', en: 'Throttle position sensor voltage (accelerator opening).' },
+    range: { ja: '目安: アクセルを離した状態で0.3〜0.7V、全開でおよそ4.0V以上', en: 'Typical: 0.3-0.7V with foot off the pedal, about 4.0V+ at wide open' },
   },
   coolant: {
-    label: '水温(C)', fmt: (d) => `${d.coolant}`,
-    desc: 'エンジン冷却水の温度です。',
-    range: '目安: 暖機完了後は80〜105°C。それを大きく超える場合はオーバーヒートの兆候です。',
+    label: { ja: '水温(C)', en: 'Coolant(C)' }, fmt: (d) => `${d.coolant}`,
+    desc: { ja: 'エンジン冷却水の温度です。', en: 'Engine coolant temperature.' },
+    range: {
+      ja: '目安: 暖機完了後は80〜105°C。それを大きく超える場合はオーバーヒートの兆候です。',
+      en: 'Typical: 80-105°C once warmed up. Well above that is a sign of overheating.',
+    },
   },
   intake: {
-    label: '吸気温(C)', fmt: (d) => `${d.intake}`,
-    desc: 'エンジンに吸い込む空気の温度です。外気温+エンジン熱の影響を受けます。',
-    range: '目安: 外気温〜外気温+30°C程度',
+    label: { ja: '吸気温(C)', en: 'Intake(C)' }, fmt: (d) => `${d.intake}`,
+    desc: {
+      ja: 'エンジンに吸い込む空気の温度です。外気温+エンジン熱の影響を受けます。',
+      en: 'Temperature of the air drawn into the engine. Affected by outside air temperature plus engine heat.',
+    },
+    range: { ja: '目安: 外気温〜外気温+30°C程度', en: 'Typical: roughly outside air temp up to outside air temp + 30°C' },
   },
   battery: {
-    label: 'Bat(V)', fmt: (d) => d.battery.toFixed(2),
-    desc: 'バッテリー電圧です。エンジン停止中と始動中で目安が変わります。',
-    range: '目安: エンジン停止中12.0〜12.8V、始動中(充電中)13.5〜14.8V',
+    label: { ja: 'Bat(V)', en: 'Bat(V)' }, fmt: (d) => d.battery.toFixed(2),
+    desc: {
+      ja: 'バッテリー電圧です。エンジン停止中と始動中で目安が変わります。',
+      en: 'Battery voltage. The typical range differs between engine off and running.',
+    },
+    range: {
+      ja: '目安: エンジン停止中12.0〜12.8V、始動中(充電中)13.5〜14.8V',
+      en: 'Typical: 12.0-12.8V engine off, 13.5-14.8V running (charging)',
+    },
   },
   ignition: {
-    label: '点火進角', fmt: (d) => d.ignition.toFixed(1),
-    desc: '点火タイミング(上死点より何度手前で点火するか)です。回転数や負荷で変動します。',
-    range: '目安: アイドリング中は5〜15°程度',
+    label: { ja: '点火進角', en: 'Ign. Advance' }, fmt: (d) => d.ignition.toFixed(1),
+    desc: {
+      ja: '点火タイミング(上死点より何度手前で点火するか)です。回転数や負荷で変動します。',
+      en: 'Ignition timing (how many degrees before top dead center it fires). Varies with rpm and load.',
+    },
+    range: { ja: '目安: アイドリング中は5〜15°程度', en: 'Typical: roughly 5-15° at idle' },
   },
   lambda: {
-    label: 'Lambda(mV)', fmt: (d) => (d.lambdaMv == null ? '--' : `${d.lambdaMv}`),
-    desc: 'O2(酸素)センサーの電圧です。クローズドループ制御中は0〜1000mVの間で細かく上下に振れるのが正常です。',
-    range: '目安: 平均でおよそ450mV付近を振れながら変動',
+    label: { ja: 'Lambda(mV)', en: 'Lambda(mV)' }, fmt: (d) => (d.lambdaMv == null ? '--' : `${d.lambdaMv}`),
+    desc: {
+      ja: 'O2(酸素)センサーの電圧です。クローズドループ制御中は0〜1000mVの間で細かく上下に振れるのが正常です。',
+      en: 'O2 (oxygen) sensor voltage. Fine, continuous swings between 0-1000mV are normal while in closed-loop control.',
+    },
+    range: { ja: '目安: 平均でおよそ450mV付近を振れながら変動', en: 'Typical: swinging around an average of roughly 450mV' },
   },
   fuelTrim: {
-    label: '燃料トリム(%)', fmt: (d) => (d.ltft == null ? '--' : signed(d.ltft)),
-    desc: 'ECUが基本の燃料噴射量をどれだけ補正しているかです。0%が「補正なし」の基準値で、プラスは燃料を足している(薄い)、マイナスは燃料を減らしている(濃い)方向です。',
-    range: '目安: ±10%以内。±25%を超える場合は燃料系統やO2センサーの点検をおすすめします。',
+    label: { ja: '燃料トリム(%)', en: 'Fuel Trim(%)' }, fmt: (d) => (d.ltft == null ? '--' : signed(d.ltft)),
+    desc: {
+      ja: 'ECUが基本の燃料噴射量をどれだけ補正しているかです。0%が「補正なし」の基準値で、プラスは燃料を足している(薄い)、マイナスは燃料を減らしている(濃い)方向です。',
+      en: 'How much the ECU is correcting the base fuel injection amount. 0% is the "no correction" baseline — positive means adding fuel (lean), negative means removing fuel (rich).',
+    },
+    range: {
+      ja: '目安: ±10%以内。±25%を超える場合は燃料系統やO2センサーの点検をおすすめします。',
+      en: 'Typical: within ±10%. Above ±25% suggests checking the fuel system or O2 sensor.',
+    },
   },
 };
 
-// アナログメーター。目盛りの補正値は Android版 GaugeScreen.kt の実測値と同じ
+// アナログメーター。目盛りの補正値は Android版 GaugeScreen.kt の実測値と同じ。
+// キーは METRICS と共通（選択画面の名前は METRICS の label を使う）
 const DIALS = {
   rpm: {
-    label: 'RPM', face: 'img/rpm.webp', min: 0, max: 8000, value: (d) => d.rpm, text: (d) => `${d.rpm} rpm`,
+    face: 'img/rpm.webp', min: 0, max: 8000, value: (d) => d.rpm, text: (d) => `${d.rpm} rpm`,
     scale: [[0, -0.0367], [1000, 0.1000], [2000, 0.2408], [3000, 0.3692], [4000, 0.5008],
       [5000, 0.6336], [6000, 0.7649], [7000, 0.8940], [8000, 1.0325]],
     box: { top: 0.629, h: 0.076, w: 0.29 },
   },
   coolant: {
-    label: '水温(C)', face: 'img/coolant.webp', min: 40, max: 120, value: (d) => d.coolant, text: (d) => `${d.coolant} °C`,
+    face: 'img/coolant.webp', min: 40, max: 120, value: (d) => d.coolant, text: (d) => `${d.coolant} °C`,
     scale: [[40, 0], [120, 1]],
     box: { top: 0.648, h: 0.095, w: 0.27 },
   },
   battery: {
-    label: 'Bat(V)', face: 'img/battery.webp', min: 8, max: 16, value: (d) => d.battery, text: (d) => `${d.battery.toFixed(1)} V`,
+    face: 'img/battery.webp', min: 8, max: 16, value: (d) => d.battery, text: (d) => `${d.battery.toFixed(1)} V`,
     scale: [[8, 0.0478], [10, 0.2637], [11, 0.3700], [11.5, 0.4341], [12, 0.4998], [12.5, 0.5606],
       [13, 0.6275], [13.5, 0.6890], [14, 0.7538], [14.5, 0.8136], [15, 0.8735], [16, 0.9605]],
     box: { top: 0.629, h: 0.076, w: 0.21 },
   },
   map: {
-    label: 'MAP(kPa)', face: 'img/map.webp', min: 0, max: 100, value: (d) => d.map, text: (d) => `${d.map} kPa`,
+    face: 'img/map.webp', min: 0, max: 100, value: (d) => d.map, text: (d) => `${d.map} kPa`,
     scale: [[0, -0.0031], [40, 0.3829], [50, 0.4978], [60, 0.6146], [70, 0.7285],
       [80, 0.8503], [90, 0.9633], [100, 1.0680]],
     box: { top: 0.629, h: 0.076, w: 0.21 },
@@ -127,54 +316,54 @@ const DIAL_SWEEP_DEG = 240;
 const SWIPE_THRESHOLD_PX = 56;
 
 const FAULTS = [
-  { key: 'coolant', icon: '🌡️', lamp: '水温', label: '水温センサーエラー' },
-  { key: 'intake', icon: '💨', lamp: '吸気', label: '吸気温度センサーエラー' },
-  { key: 'fuelPump', icon: '⛽', lamp: '燃料', label: '燃料ポンプ回路エラー' },
-  { key: 'throttle', icon: '⚡', lamp: 'スロットル', label: 'スロットルポット回路エラー' },
+  { key: 'coolant', icon: '🌡️', lamp: { ja: '水温', en: 'Coolant' }, label: { ja: '水温センサーエラー', en: 'Coolant Sensor Error' } },
+  { key: 'intake', icon: '💨', lamp: { ja: '吸気', en: 'Intake' }, label: { ja: '吸気温度センサーエラー', en: 'Intake Temp Sensor Error' } },
+  { key: 'fuelPump', icon: '⛽', lamp: { ja: '燃料', en: 'Fuel' }, label: { ja: '燃料ポンプ回路エラー', en: 'Fuel Pump Circuit Error' } },
+  { key: 'throttle', icon: '⚡', lamp: { ja: 'スロットル', en: 'Throttle' }, label: { ja: 'スロットルポット回路エラー', en: 'Throttle Pot Circuit Error' } },
 ];
 
 // 接続中のグラフ（GaugeScreen.kt の ChartsView と同じ7項目）
 const LIVE_CHARTS = [
-  { label: '回転数(rpm)', value: (d) => d.rpm },
-  { label: '水温(°C)', value: (d) => d.coolant },
-  { label: '吸気温度(°C)', value: (d) => d.intake },
-  { label: 'MAP(kPa)', value: (d) => d.map },
-  { label: 'バッテリー電圧(V)', value: (d) => d.battery },
-  { label: '点火進角(°)', value: (d) => d.ignition },
-  { label: 'ラムダ電圧(mV)', value: (d) => d.lambdaMv },
+  { label: { ja: '回転数(rpm)', en: 'Engine Speed (rpm)' }, value: (d) => d.rpm },
+  { label: { ja: '水温(°C)', en: 'Coolant (°C)' }, value: (d) => d.coolant },
+  { label: { ja: '吸気温度(°C)', en: 'Intake Temp (°C)' }, value: (d) => d.intake },
+  { label: { ja: 'MAP(kPa)', en: 'MAP (kPa)' }, value: (d) => d.map },
+  { label: { ja: 'バッテリー電圧(V)', en: 'Battery Voltage (V)' }, value: (d) => d.battery },
+  { label: { ja: '点火進角(°)', en: 'Ignition Advance (°)' }, value: (d) => d.ignition },
+  { label: { ja: 'ラムダ電圧(mV)', en: 'Lambda Voltage (mV)' }, value: (d) => d.lambdaMv },
 ];
 // 保存したログのグラフ（LogChartScreen.kt / LogFileParser.kt と同じ列）
 const LOG_COLUMNS = [
-  ['engineSpeed', '回転数(rpm)'],
-  ['waterTemp', '水温(°C)'],
-  ['intakeAirTemp', '吸気温度(°C)'],
-  ['throttleVoltage', 'スロットル電圧(V)'],
-  ['manifoldPressure', 'MAP(kPa)'],
-  ['idleBypassPos', 'IACポジション'],
-  ['mainVoltage', 'バッテリー電圧(V)'],
-  ['lambdaVoltage_mV', 'ラムダ電圧(mV)'],
+  ['engineSpeed', { ja: '回転数(rpm)', en: 'Engine Speed (rpm)' }],
+  ['waterTemp', { ja: '水温(°C)', en: 'Coolant (°C)' }],
+  ['intakeAirTemp', { ja: '吸気温度(°C)', en: 'Intake Temp (°C)' }],
+  ['throttleVoltage', { ja: 'スロットル電圧(V)', en: 'Throttle Voltage (V)' }],
+  ['manifoldPressure', { ja: 'MAP(kPa)', en: 'MAP (kPa)' }],
+  ['idleBypassPos', { ja: 'IACポジション', en: 'IAC Position' }],
+  ['mainVoltage', { ja: 'バッテリー電圧(V)', en: 'Battery Voltage (V)' }],
+  ['lambdaVoltage_mV', { ja: 'ラムダ電圧(mV)', en: 'Lambda Voltage (mV)' }],
 ];
 
 // 部品テスト（Android版 ActuatorControls.kt / MemsCommand.kt と同じ）。
 // MEMSFCRにある「Temperature Gauge」はコマンド値が未確認のため入れない
 const ACTUATORS = [
-  { label: '燃料ポンプ', on: 0x11, off: 0x01 },
-  { label: 'マニホールドヒーター', on: 0x12, off: 0x02 },
-  { label: 'エアコン', on: 0x13, off: 0x03 },
-  { label: 'パージバルブ', on: 0x18, off: 0x08 },
-  { label: 'ラムダヒーター', on: 0x19, off: 0x09 },
+  { label: { ja: '燃料ポンプ', en: 'Fuel Pump' }, on: 0x11, off: 0x01 },
+  { label: { ja: 'マニホールドヒーター', en: 'Manifold Heater' }, on: 0x12, off: 0x02 },
+  { label: { ja: 'エアコン', en: 'A/C' }, on: 0x13, off: 0x03 },
+  { label: { ja: 'パージバルブ', en: 'Purge Valve' }, on: 0x18, off: 0x08 },
+  { label: { ja: 'ラムダヒーター', en: 'Lambda Heater' }, on: 0x19, off: 0x09 },
   // このミニはファンを水温スイッチで直接動かす配線で、ECUからは動かない（実車確認済み）
-  { label: 'ファン1', on: 0x1D, off: 0x0D, unsupported: true },
-  { label: 'ファン2', on: 0x1E, off: 0x0E, unsupported: true },
-  { label: 'インジェクター', on: 0xF7 },
-  { label: 'イグニッションコイル', on: 0xF8 },
+  { label: { ja: 'ファン1', en: 'Fan 1' }, on: 0x1D, off: 0x0D, unsupported: true },
+  { label: { ja: 'ファン2', en: 'Fan 2' }, on: 0x1E, off: 0x0E, unsupported: true },
+  { label: { ja: 'インジェクター', en: 'Injector' }, on: 0xF7 },
+  { label: { ja: 'イグニッションコイル', en: 'Ignition Coil' }, on: 0xF8 },
 ];
 
 // =====================================================================
 // 小物
 // =====================================================================
 
-const $ = (id) => document.getElementById(id);
+function $(id) { return document.getElementById(id); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 function signed(n) { return (n > 0 ? '+' : '') + n; }
@@ -196,7 +385,7 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-// ---------- 診断用の記録 ----------
+// ---------- 診断用の記録（中身は開発者向けなので日本語のまま） ----------
 const t0 = performance.now();
 const logLines = [];
 let rawLogging = false;
@@ -399,6 +588,7 @@ async function establish(my, attempts) {
   return false;
 }
 
+let lastRate = null;
 async function pollLoop(my) {
   let fails = 0;
   let cycle = 0;
@@ -432,9 +622,9 @@ async function pollLoop(my) {
     onData(parseFrames(f80, last7d), true);
     rateCount++;
     if (rateCount === 20) {
-      const perSec = 20000 / (performance.now() - rateStart);
-      $('rateNote').textContent = `更新: 毎秒 ${perSec.toFixed(1)} 回`;
-      log(`更新 毎秒 ${perSec.toFixed(1)} 回`);
+      lastRate = (20000 / (performance.now() - rateStart)).toFixed(1);
+      $('rateNote').textContent = t('rate', lastRate);
+      log(`更新 毎秒 ${lastRate} 回`);
       rateCount = 0;
       rateStart = performance.now();
     }
@@ -462,7 +652,7 @@ async function runBle() {
   if (state !== 'reconnecting') setState('connecting');
   acquireWakeLock();
   if (!(await establish(my, CONNECT_ATTEMPTS))) {
-    if (my === session) failConnection('接続に失敗しました。配線・電源・ECUの状態を確認してもう一度お試しください。');
+    if (my === session) failConnection(['connectFailed']);
     return;
   }
   while (my === session) {
@@ -470,12 +660,13 @@ async function runBle() {
     if (my !== session) return;
     setState('reconnecting');
     if (!(await reconnectLoop(my))) {
-      if (my === session) failConnection('接続が切れました。キーがONになっているか確認して、もう一度つないでください。');
+      if (my === session) failConnection(['connectionLost']);
       return;
     }
   }
 }
 
+// message は [文言キー, 差し込む値...]（言語を切り替えた時に訳し直せるように）
 function failConnection(message) {
   session++;
   failQueuedCommands();
@@ -499,7 +690,7 @@ async function chooseDeviceAndConnect() {
   } catch (e) {
     if (e.name !== 'NotFoundError') {
       log(`エラー: ${e.name} ${e.message}`);
-      setState('error', `Bluetoothのエラー: ${e.message}`);
+      setState('error', ['btError', e.message]);
     }
     return;
   }
@@ -566,25 +757,25 @@ function startDemo() {
   const start = performance.now();
   demoTimer = setInterval(() => {
     if (my !== session) return;
-    const t = (performance.now() - start) / 1000;
+    const sec = (performance.now() - start) / 1000;
     // 20秒周期: 0〜8秒アイドル → 8〜14秒で空ぶかし → 14〜20秒で戻る
-    const phase = t % 20;
+    const phase = sec % 20;
     let rev = 0;
     if (phase >= 8 && phase < 11) rev = (phase - 8) / 3;
     else if (phase >= 11 && phase < 14) rev = 1;
     else if (phase >= 14 && phase < 17) rev = 1 - (phase - 14) / 3;
-    const wobble = Math.sin(t * 2.3) * 25;
+    const wobble = Math.sin(sec * 2.3) * 25;
     onData({
       rpm: Math.round(860 + wobble + rev * 2400),
-      coolant: Math.round(Math.min(88, 62 + t * 0.6)),
-      intake: 34 + (Math.round(t * 0.05) % 3),
-      map: Math.round(34 + rev * 30 + Math.sin(t) * 1.5),
-      battery: 14.1 + Math.sin(t * 0.7) * 0.08,
+      coolant: Math.round(Math.min(88, 62 + sec * 0.6)),
+      intake: 34 + (Math.round(sec * 0.05) % 3),
+      map: Math.round(34 + rev * 30 + Math.sin(sec) * 1.5),
+      battery: 14.1 + Math.sin(sec * 0.7) * 0.08,
       tpsV: 0.56 + rev * 1.4,
       parkNeutral: false,
       faults: { coolant: false, intake: false, fuelPump: false, throttle: false },
       idleSwitch: rev === 0, iac: 45, idleDeviation: Math.round(wobble), ignition: 12 + rev * 18,
-      coilMs: 3.2, throttleAngle: rev * 40, afr: 14.7, lambdaMv: Math.round(450 + Math.sin(t * 5) * 380),
+      coilMs: 3.2, throttleAngle: rev * 40, afr: 14.7, lambdaMv: Math.round(450 + Math.sin(sec * 5) * 380),
       lambdaFreq: 12, lambdaDuty: 50, lambdaStatus: true, closedLoop: rev === 0, ltft: 2, stft: 0,
       canister: 0, idleBase: 30, idleError: 0,
     }, false);
@@ -613,11 +804,11 @@ function openDb() {
   }
   return dbPromise;
 }
-function txDone(t) {
+function txDone(tr) {
   return new Promise((resolve, reject) => {
-    t.oncomplete = () => resolve();
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error);
+    tr.oncomplete = () => resolve();
+    tr.onerror = () => reject(tr.error);
+    tr.onabort = () => reject(tr.error);
   });
 }
 function reqResult(r) {
@@ -633,17 +824,17 @@ async function listLogs() {
 }
 async function readLogText(id) {
   const db = await openDb();
-  const t = db.transaction('chunks');
-  const chunks = await reqResult(t.objectStore('chunks').index('logId').getAll(IDBKeyRange.only(id)));
+  const tr = db.transaction('chunks');
+  const chunks = await reqResult(tr.objectStore('chunks').index('logId').getAll(IDBKeyRange.only(id)));
   return chunks.map((c) => c.text).join('');
 }
 async function deleteLog(id) {
   const db = await openDb();
-  const t = db.transaction(['logs', 'chunks'], 'readwrite');
-  t.objectStore('logs').delete(id);
-  const keys = await reqResult(t.objectStore('chunks').index('logId').getAllKeys(IDBKeyRange.only(id)));
-  for (const k of keys) t.objectStore('chunks').delete(k);
-  await txDone(t);
+  const tr = db.transaction(['logs', 'chunks'], 'readwrite');
+  tr.objectStore('logs').delete(id);
+  const keys = await reqResult(tr.objectStore('chunks').index('logId').getAllKeys(IDBKeyRange.only(id)));
+  for (const k of keys) tr.objectStore('chunks').delete(k);
+  await txDone(tr);
 }
 async function enforceRetention() {
   const logs = await listLogs();
@@ -690,10 +881,10 @@ function flushLog() {
   const meta = { ...cur };
   logger.writing = logger.writing.then(async () => {
     const db = await openDb();
-    const t = db.transaction(['logs', 'chunks'], 'readwrite');
-    t.objectStore('logs').put(meta);
-    t.objectStore('chunks').add({ logId: meta.id, text });
-    await txDone(t);
+    const tr = db.transaction(['logs', 'chunks'], 'readwrite');
+    tr.objectStore('logs').put(meta);
+    tr.objectStore('chunks').add({ logId: meta.id, text });
+    await txDone(tr);
   }).catch((e) => log(`✗ ログ保存失敗: ${e.message}`));
   return logger.writing;
 }
@@ -723,6 +914,7 @@ window.addEventListener('pagehide', () => { flushLog(); });
 // =====================================================================
 
 let state = 'idle'; // idle | connecting | connected | reconnecting | error | demo
+let stateMessage = null; // 接続画面に出すメッセージ [キー, 値...]
 let screen = 'connect'; // connect | live | actuator | logs | logchart
 let mode = 'simple'; // simple | detail | charts | analog（接続したら毎回シンプルから）
 let backStack = [];
@@ -744,6 +936,7 @@ function onData(d, record) {
 function setState(next, message) {
   const wasLive = isLive();
   state = next;
+  stateMessage = message || null;
   const live = isLive();
   if (live && !wasLive) {
     mode = 'simple';
@@ -756,13 +949,16 @@ function setState(next, message) {
     history = [];
     if (screen === 'live' || screen === 'actuator') { backStack = []; showScreen('connect', false); }
   }
-  $('connectMsg').hidden = !message;
-  $('connectMsg').textContent = message || '';
-  $('btnReconnect').hidden = !(next === 'error' && device);
-  $('btnConnect').textContent = next === 'error' && device ? '別のアダプターを選ぶ' : 'Bluetoothで接続';
-  $('btnStop').textContent = next === 'demo' ? '終了' : '切断';
+  updateStateTexts();
   updateBar();
   render();
+}
+function updateStateTexts() {
+  $('connectMsg').hidden = !stateMessage;
+  $('connectMsg').textContent = stateMessage ? t(...stateMessage) : '';
+  $('btnReconnect').hidden = !(state === 'error' && device);
+  $('btnConnect').textContent = state === 'error' && device ? t('chooseOther') : t('connectBt');
+  $('btnStop').textContent = state === 'demo' ? t('exitDemo') : t('disconnect');
 }
 
 function showScreen(name, pushBack = true) {
@@ -791,22 +987,25 @@ function setMode(next) {
   showScreen('live', false);
 }
 
+function statusLabel() {
+  switch (state) {
+    case 'connecting': return [t('statusConnecting'), 'warn'];
+    case 'connected': return [MEMS13_ECU_IDS.includes(ecuId) ? t('statusMems13') : t('statusUnknown', ecuId), 'ok'];
+    case 'reconnecting': return [t('statusReconnecting'), 'warn'];
+    case 'demo': return [t('statusDemo'), 'demo'];
+    default: return [t('statusDisconnected'), ''];
+  }
+}
 function updateBar() {
   const title = $('barTitle');
   title.className = 'title';
   if (screen === 'live') {
-    const labels = {
-      connecting: ['接続中…', 'warn'],
-      connected: [KNOWN_ECU_IDS[ecuId] || `MEMS 接続済み(ID: ${ecuId})`, 'ok'],
-      reconnecting: ['再接続中…', 'warn'],
-      demo: ['デモモード', 'demo'],
-    };
-    const [text, cls] = labels[state] || ['未接続', ''];
+    const [text, cls] = statusLabel();
     title.textContent = text;
     title.className = `title badge ${cls}`;
   } else {
     title.textContent = {
-      connect: 'ローバーミニ MEMS診断', actuator: '部品テスト', logs: '記録済みログ', logchart: logChartName,
+      connect: t('appTitle'), actuator: t('actuatorTitle'), logs: t('logsTitle'), logchart: logChart.name,
     }[screen];
   }
   $('btnMenu').hidden = screen !== 'live';
@@ -876,7 +1075,7 @@ function pickDial(slot) {
   box.innerHTML = '';
   for (const key of DIAL_ORDER) {
     const b = document.createElement('button');
-    b.textContent = DIALS[key].label;
+    b.textContent = tx(METRICS[key].label);
     if (slots[slot] === key) b.className = 'current';
     b.addEventListener('click', () => {
       const other = 1 - slot;
@@ -892,34 +1091,36 @@ function pickDial(slot) {
 
 function hasFault(d) { return FAULTS.some((f) => d.faults[f.key]); }
 
+// 詳細画面（DetailedDataList と同じ並び・文言）
 function detailRows(d) {
-  const onOff = (b) => (b == null ? '--' : b ? '有効' : '無効');
+  const onOff = (b) => (b == null ? '--' : b ? t('enabled') : t('disabled'));
   const num = (v, digits, unit) => (v == null ? '--' : `${digits == null ? v : v.toFixed(digits)}${unit || ''}`);
+  const L = (ja, en) => (lang === 'en' ? en : ja);
   return [
-    ['回転数', `${d.rpm} rpm`],
-    ['水温', `${d.coolant} °C`],
-    ['吸気温度', `${d.intake} °C`],
+    [L('回転数', 'Engine Speed'), `${d.rpm} rpm`],
+    [L('水温', 'Coolant Temp'), `${d.coolant} °C`],
+    [L('吸気温度', 'Intake Air Temp'), `${d.intake} °C`],
     ['MAP', `${d.map} kPa`],
-    ['スロットル電圧', `${d.tpsV.toFixed(2)} V`],
-    ['スロットル開度', num(d.throttleAngle, 0, ' °')],
-    ['アイドル回転偏差', `${d.idleDeviation}`],
-    ['ラムダ電圧', num(d.lambdaMv, null, ' mV')],
-    ['IACポジション', `${d.iac}`],
-    ['バッテリー電圧', `${d.battery.toFixed(2)} V`],
-    ['空燃比', num(d.afr, 1)],
-    ['ラムダセンサー周波数', num(d.lambdaFreq)],
-    ['ラムダセンサーデューティ比', num(d.lambdaDuty)],
-    ['ラムダセンサー状態', onOff(d.lambdaStatus)],
-    ['クローズドループ', onOff(d.closedLoop)],
-    ['アイドルベース位置', num(d.idleBase)],
-    ['アイドルエラー', num(d.idleError)],
-    ['点火進角', `${d.ignition.toFixed(1)} °`],
-    ['燃料トリム(長期)', d.ltft == null ? '--' : signed(d.ltft)],
-    ['燃料トリム(短期)', d.stft == null ? '--' : signed(d.stft)],
-    ['キャニスターパージデューティ比', num(d.canister)],
-    ['アイドルスイッチ', d.idleSwitch ? 'ON' : 'OFF'],
-    ['パーキング/ニュートラルスイッチ', d.parkNeutral ? 'ON' : 'OFF'],
-    ['コイル時間', `${Math.round(d.coilMs * 1000)} µs`],
+    [L('スロットル電圧', 'Throttle Voltage'), `${d.tpsV.toFixed(2)} V`],
+    [L('スロットル開度', 'Throttle Angle'), num(d.throttleAngle, 0, ' °')],
+    [L('アイドル回転偏差', 'Idle Speed Deviation'), `${d.idleDeviation}`],
+    [L('ラムダ電圧', 'Lambda Voltage'), num(d.lambdaMv, null, ' mV')],
+    [L('IACポジション', 'IAC Position'), `${d.iac}`],
+    [L('バッテリー電圧', 'Battery Voltage'), `${d.battery.toFixed(2)} V`],
+    [L('空燃比', 'Air/Fuel Ratio'), num(d.afr, 1)],
+    [L('ラムダセンサー周波数', 'Lambda Sensor Frequency'), num(d.lambdaFreq)],
+    [L('ラムダセンサーデューティ比', 'Lambda Sensor Duty Cycle'), num(d.lambdaDuty)],
+    [L('ラムダセンサー状態', 'Lambda Sensor Status'), onOff(d.lambdaStatus)],
+    [L('クローズドループ', 'Closed Loop'), onOff(d.closedLoop)],
+    [L('アイドルベース位置', 'Idle Base Position'), num(d.idleBase)],
+    [L('アイドルエラー', 'Idle Error'), num(d.idleError)],
+    [L('点火進角', 'Ign. Advance'), `${d.ignition.toFixed(1)} °`],
+    [L('燃料トリム(長期)', 'Fuel Trim (Long)'), d.ltft == null ? '--' : signed(d.ltft)],
+    [L('燃料トリム(短期)', 'Fuel Trim (Short)'), d.stft == null ? '--' : signed(d.stft)],
+    [L('キャニスターパージデューティ比', 'Canister Purge Duty Cycle'), num(d.canister)],
+    [L('アイドルスイッチ', 'Idle Switch'), d.idleSwitch ? 'ON' : 'OFF'],
+    [L('パーキング/ニュートラルスイッチ', 'Park/Neutral Switch'), d.parkNeutral ? 'ON' : 'OFF'],
+    [L('コイル時間', 'Coil Time'), `${Math.round(d.coilMs * 1000)} µs`],
   ];
 }
 
@@ -943,7 +1144,7 @@ function faultCell(isFaulty) {
   span.className = 'fault-cell';
   const lamp = document.createElement('i');
   lamp.className = 'fault-lamp' + (isFaulty ? ' on' : '');
-  span.append(isFaulty ? 'エラーあり' : '正常', lamp);
+  span.append(isFaulty ? t('faultError') : t('faultNormal'), lamp);
   return span;
 }
 
@@ -1047,14 +1248,14 @@ function render() {
   $('panelCharts').hidden = !d || mode !== 'charts';
   if (!d) return;
   const bad = hasFault(d);
-  $('banner').textContent = bad ? 'センサーエラー・詳細を確認' : 'センサーエラーなし';
+  $('banner').textContent = bad ? t('faultBannerNg') : t('faultBannerOk');
   $('banner').className = 'banner' + (bad ? ' ng' : '');
 
   if (mode === 'simple') {
     for (const el of $('cards').querySelectorAll('.v')) el.textContent = METRICS[el.dataset.metric].fmt(d);
   } else if (mode === 'detail') {
     fillTable($('detailRows'), detailRows(d));
-    fillTable($('faultRows'), FAULTS.map((f) => [f.label, faultCell(d.faults[f.key])]));
+    fillTable($('faultRows'), FAULTS.map((f) => [tx(f.label), faultCell(d.faults[f.key])]));
   } else if (mode === 'charts') {
     $('chartsWaiting').hidden = history.length >= 2;
     $('liveCharts').hidden = history.length < 2;
@@ -1067,7 +1268,7 @@ function render() {
 function updateRecordingLine() {
   const line = $('recordingLine');
   line.hidden = !logger.cur;
-  if (logger.cur) line.textContent = `記録中: ${logger.cur.name}`;
+  if (logger.cur) line.textContent = t('recording', logger.cur.name);
 }
 let liveMsgTimer = null;
 function showLiveMessage(text) {
@@ -1091,13 +1292,13 @@ function showActuatorResult(text, ok) {
 function updateActuatorAvailability(d) {
   const canTest = d != null && d.rpm === 0;
   const status = $('actStatus');
-  status.textContent = canTest ? 'テスト可能' : 'エンジン停止時のみ';
+  status.textContent = canTest ? t('canTest') : t('cannotTest');
   status.className = 'act-status ' + (canTest ? 'ok' : 'ng');
   for (const b of document.querySelectorAll('.act-btn')) b.disabled = !canTest || b.dataset.unsupported === '1';
 }
 
 // ---------- ログ一覧・ログのグラフ ----------
-let logChartName = '';
+const logChart = { name: '', meta: null };
 async function refreshLogList() {
   if (logger.cur) await flushLog();
   let logs = [];
@@ -1117,7 +1318,7 @@ async function refreshLogList() {
     const recording = logger.cur && logger.cur.id === meta.id;
     item.innerHTML = '<div class="name"></div><div class="meta"></div><div class="actions"></div>';
     item.querySelector('.name').textContent = meta.name;
-    item.querySelector('.meta').textContent = `${dateText} ・ ${(meta.size / 1024).toFixed(1)} KB${recording ? ' ・ 記録中' : ''}`;
+    item.querySelector('.meta').textContent = `${dateText} ・ ${(meta.size / 1024).toFixed(1)} KB${recording ? ` ・ ${t('recordingTag')}` : ''}`;
     const actions = item.querySelector('.actions');
     const add = (text, fn, cls) => {
       const b = document.createElement('button');
@@ -1127,10 +1328,10 @@ async function refreshLogList() {
       actions.append(b);
       return b;
     };
-    add('グラフで見る', () => openLogChart(meta));
-    add('共有', () => shareLog(meta));
-    const del = add('削除', async () => {
-      if (!confirm(`${meta.name} を削除しますか？`)) return;
+    add(t('viewChart'), () => openLogChart(meta));
+    add(t('share'), () => shareLog(meta));
+    const del = add(t('delete'), async () => {
+      if (!confirm(t('deleteConfirm', meta.name))) return;
       await deleteLog(meta.id);
       refreshLogList();
     }, 'danger');
@@ -1205,21 +1406,22 @@ function timeAxisLabels(times) {
     return `${pad(Math.floor(ms / 3600000))}:${pad(Math.floor(ms / 60000) % 60)}`;
   });
 }
-async function openLogChart(meta) {
-  logChartName = meta.name;
-  showScreen('logchart');
-  $('logChartMsg').textContent = '読み込み中…';
+async function openLogChart(meta, pushBack = true) {
+  logChart.name = meta.name;
+  logChart.meta = meta;
+  if (screen !== 'logchart') showScreen('logchart', pushBack);
+  $('logChartMsg').textContent = t('loading');
   $('logChartMsg').hidden = false;
   $('logCharts').innerHTML = '';
   if (logger.cur && logger.cur.id === meta.id) await flushLog();
   const series = parseLogCsv(await readLogText(meta.id));
   if (!series.length) {
-    $('logChartMsg').textContent = 'グラフに表示できるデータがありません';
+    $('logChartMsg').textContent = t('noChartData');
     return;
   }
   $('logChartMsg').hidden = true;
   const drawn = series.map((s) => {
-    const { card, canvas } = makeChartCard(s.label, true);
+    const { card, canvas } = makeChartCard(tx(s.label), true);
     $('logCharts').append(card);
     return { s, canvas };
   });
@@ -1230,49 +1432,53 @@ async function openLogChart(meta) {
 function tickClock() { $('clock').textContent = formatClock(new Date()); }
 
 // =====================================================================
-// 画面の部品を組み立てて、ボタンをつなぐ
+// 画面の部品を組み立てる（言語を切り替えたら作り直す）
 // =====================================================================
 
-function buildStatic() {
+function buildDynamicParts() {
   // シンプル画面のカード
+  $('cards').innerHTML = '';
   for (const [key, m] of Object.entries(METRICS)) {
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<div class="head"><span></span><button class="info" aria-label="説明">？</button></div><div class="v" data-metric="${key}">--</div>`;
-    card.querySelector('.head span').textContent = m.label;
+    card.innerHTML = `<div class="head"><span></span><button class="info">？</button></div><div class="v" data-metric="${key}">--</div>`;
+    card.querySelector('.head span').textContent = tx(m.label);
     card.querySelector('.info').addEventListener('click', () => {
-      $('infoTitle').textContent = m.label;
-      $('infoDesc').textContent = m.desc;
-      $('infoRange').textContent = m.range;
+      $('infoTitle').textContent = tx(m.label);
+      $('infoDesc').textContent = tx(m.desc);
+      $('infoRange').textContent = tx(m.range);
       $('infoDialog').showModal();
     });
     $('cards').appendChild(card);
   }
   // グラフ画面
+  $('liveCharts').innerHTML = '';
   liveChartCanvases = LIVE_CHARTS.map((c) => {
-    const { card, canvas } = makeChartCard(c.label, false);
+    const { card, canvas } = makeChartCard(tx(c.label), false);
     $('liveCharts').append(card);
     return canvas;
   });
   // アナログ画面のエラーランプ
+  $('lamps').innerHTML = '';
   for (const f of FAULTS) {
     const lamp = document.createElement('span');
     lamp.className = 'lamp';
     lamp.dataset.fault = f.key;
-    lamp.title = f.lamp;
+    lamp.title = tx(f.lamp);
     lamp.textContent = f.icon;
     $('lamps').appendChild(lamp);
   }
   // 部品テストの行
+  $('actRows').innerHTML = '';
   for (const a of ACTUATORS) {
     const row = document.createElement('div');
     row.className = 'act-row';
     const name = document.createElement('div');
     name.className = 'act-name';
-    name.textContent = a.label;
+    name.textContent = tx(a.label);
     if (a.unsupported) {
       const note = document.createElement('small');
-      note.textContent = '電動ファンはECU制御ではありません';
+      note.textContent = t('fanNote');
       name.append(note);
     }
     const buttons = document.createElement('div');
@@ -1283,13 +1489,13 @@ function buildStatic() {
       b.textContent = text;
       if (a.unsupported) b.dataset.unsupported = '1';
       b.addEventListener('click', async () => {
-        const ok = await queueCommand(cmd, `${a.label} ${text}`);
-        showActuatorResult(`${a.label}: ${ok ? '実行しました' : '実行に失敗しました'}`, ok);
+        const ok = await queueCommand(cmd, `${a.label.ja} ${text}`);
+        showActuatorResult(t(ok ? 'actDone' : 'actFailed', tx(a.label)), ok);
       });
       buttons.append(b);
     };
     if (a.off == null) {
-      addButton('テスト実行', a.on);
+      addButton(t('runTest'), a.on);
     } else {
       addButton('ON', a.on);
       addButton('OFF', a.off);
@@ -1299,12 +1505,41 @@ function buildStatic() {
   }
 }
 
+// 言語を反映（接続中でもBluetoothは切らずに、画面の文字だけ入れ替える）
+function applyLanguage() {
+  document.documentElement.lang = lang;
+  document.title = t('appTitle');
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  $('btnLang').textContent = t('langToggle');
+  if (!navigator.bluetooth) {
+    $('supportNote').innerHTML = '';
+    const span = document.createElement('span');
+    span.className = 'ng';
+    span.textContent = t('noBluetooth');
+    $('supportNote').append(span);
+  }
+  if (lastRate) $('rateNote').textContent = t('rate', lastRate);
+  buildDynamicParts();
+  updateStateTexts();
+  updateRecordingLine();
+  updateBar();
+  render();
+  if (screen === 'logs') refreshLogList();
+  if (screen === 'logchart' && logChart.meta) openLogChart(logChart.meta, false);
+}
+function toggleLanguage() {
+  lang = lang === 'ja' ? 'en' : 'ja';
+  store('lang', lang);
+  applyLanguage();
+}
+
 function wireUi() {
   $('btnConnect').addEventListener('click', chooseDeviceAndConnect);
   $('btnReconnect').addEventListener('click', () => { if (device) runBle(); });
   $('btnDemo').addEventListener('click', startDemo);
   $('btnOpenLogs').addEventListener('click', () => showScreen('logs'));
   $('btnStop').addEventListener('click', () => { log('切断ボタン'); stopAll(); });
+  $('btnLang').addEventListener('click', toggleLanguage);
   $('btnNight').addEventListener('click', toggleNight);
   $('btnNightAnalog').addEventListener('click', toggleNight);
   $('btnMenu').addEventListener('click', (e) => { e.stopPropagation(); $('menu').hidden = !$('menu').hidden; });
@@ -1331,7 +1566,7 @@ function wireUi() {
     btn.disabled = true;
     const ok = await queueCommand(CMD.CLEAR_FAULTS, 'エラークリア');
     btn.disabled = false;
-    showLiveMessage(ok ? 'エラーコードをクリアしました' : 'クリアに失敗しました');
+    showLiveMessage(ok ? t('clearOk') : t('clearNg'));
   });
   $('btnRefreshLogs').addEventListener('click', refreshLogList);
   $('optRaw').addEventListener('change', (e) => { rawLogging = e.target.checked; });
@@ -1346,33 +1581,30 @@ function wireUi() {
     const btn = $('btnCopyLog');
     try {
       await navigator.clipboard.writeText(text);
-      btn.textContent = 'コピーしました';
+      btn.textContent = t('copied');
     } catch (e) {
       const range = document.createRange();
       range.selectNodeContents($('log'));
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
-      btn.textContent = '選択しました（コピーしてください）';
+      btn.textContent = t('selected');
     }
-    setTimeout(() => { btn.textContent = '記録をコピー'; }, 2500);
+    setTimeout(() => { btn.textContent = t('copyLog'); }, 2500);
   });
   $('btnClearLog').addEventListener('click', () => { logLines.length = 0; $('log').textContent = ''; });
   window.addEventListener('resize', () => render());
 }
 
 function init() {
-  buildStatic();
   setupDials();
   wireUi();
   applyNight();
   setInterval(() => { if (nightOverride == null) applyNight(); }, 60000);
   tickClock();
   setInterval(tickClock, 1000);
-  if (!navigator.bluetooth) {
-    $('supportNote').innerHTML = '<span class="ng">このブラウザはBluetoothに対応していません。iPhoneでは「Bluefy」、AndroidではChromeで開いてください。デモモードと保存したログはこのままお試しいただけます。</span>';
-    $('btnConnect').disabled = true;
-  }
+  if (!navigator.bluetooth) $('btnConnect').disabled = true;
+  applyLanguage();
   setState('idle');
   log('ページ読み込み');
 }

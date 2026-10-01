@@ -218,3 +218,9 @@ dialog .range { color: var(--muted); font-size: 14px; }
 dialog form { margin-top: 12px; }
 #pickOptions button { display: block; width: 100%; text-align: left; background: transparent; color: var(--text); padding: 12px 8px; border-radius: 8px; font-weight: 500; }
 #pickOptions button.current { color: var(--accent); font-weight: 700; }
+
+/* 言語切替（Android版の LanguageToggleButton と同じく枠付きの EN / JA） */
+button.lang {
+  padding: 4px 10px; font-size: 13px; border-radius: 999px;
+  background: transparent; color: var(--bar-text); border: 1.5px solid var(--bar-text);
+}
