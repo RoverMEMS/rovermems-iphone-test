@@ -24,12 +24,24 @@ const CONNECT_RETRY_DELAY_MS = 1000;
 const AUTO_RECONNECT_WINDOW_MS = 60000;
 const AUTO_RECONNECT_INTERVAL_MS = 1500;
 const POLL_FAILS_BEFORE_RECONNECT = 3;
-// 0x7D（ラムダ・燃料トリム等）は0x80ほど速く変わらないので2回に1回だけ取り、
-// メーターに使う0x80の更新を速くする（iPhone実車で両方毎回だと毎秒2.3回だった）
+// 0x7D（ラムダ・燃料トリム等）は2回に1回だけ取り、メーターに使う0x80の更新を速くする
+// （iPhone実車で両方毎回だと毎秒2.3回だった）
 const FRAME7D_EVERY = 2;
 const TEMP_OFFSET_C = 55;
 const FUEL_TRIM_CENTER = 128;
 const KNOWN_ECU_IDS = { '9A 00 02 02': 'MEMS 1.3 検出' };
+
+// グラフ（GaugeViewModel.MAX_HISTORY_SIZE と同じ）
+const MAX_HISTORY_SIZE = 150;
+// ログ（DataLogger.kt / GaugeViewModel.kt と同じ）
+const LOG_HEADER = '#time,engineSpeed,waterTemp,intakeAirTemp,throttleVoltage,'
+  + 'manifoldPressure,idleBypassPos,mainVoltage,idleswitch,closedloop,lambdaVoltage_mV';
+const MAX_LOG_FILES = 50;
+const LOG_AUTO_STOP_AFTER_MS = 30000;
+const LOG_FLUSH_INTERVAL_MS = 3000;
+// 夜間モード（NightModeManager.kt と同じ時間帯）
+const NIGHT_START_HOUR = 18;
+const NIGHT_END_HOUR = 6;
 
 // =====================================================================
 // 表示項目（文言は Android版 strings.xml と同じ）
@@ -86,39 +98,61 @@ const METRICS = {
 // アナログメーター。目盛りの補正値は Android版 GaugeScreen.kt の実測値と同じ
 const DIALS = {
   rpm: {
-    face: 'img/rpm.webp', min: 0, max: 8000, value: (d) => d.rpm, text: (d) => `${d.rpm} rpm`,
+    label: 'RPM', face: 'img/rpm.webp', min: 0, max: 8000, value: (d) => d.rpm, text: (d) => `${d.rpm} rpm`,
     scale: [[0, -0.0367], [1000, 0.1000], [2000, 0.2408], [3000, 0.3692], [4000, 0.5008],
       [5000, 0.6336], [6000, 0.7649], [7000, 0.8940], [8000, 1.0325]],
     box: { top: 0.629, h: 0.076, w: 0.29 },
   },
   coolant: {
-    face: 'img/coolant.webp', min: 40, max: 120, value: (d) => d.coolant, text: (d) => `${d.coolant} °C`,
+    label: '水温(C)', face: 'img/coolant.webp', min: 40, max: 120, value: (d) => d.coolant, text: (d) => `${d.coolant} °C`,
     scale: [[40, 0], [120, 1]],
     box: { top: 0.648, h: 0.095, w: 0.27 },
   },
   battery: {
-    face: 'img/battery.webp', min: 8, max: 16, value: (d) => d.battery, text: (d) => `${d.battery.toFixed(1)} V`,
+    label: 'Bat(V)', face: 'img/battery.webp', min: 8, max: 16, value: (d) => d.battery, text: (d) => `${d.battery.toFixed(1)} V`,
     scale: [[8, 0.0478], [10, 0.2637], [11, 0.3700], [11.5, 0.4341], [12, 0.4998], [12.5, 0.5606],
       [13, 0.6275], [13.5, 0.6890], [14, 0.7538], [14.5, 0.8136], [15, 0.8735], [16, 0.9605]],
     box: { top: 0.629, h: 0.076, w: 0.21 },
   },
   map: {
-    face: 'img/map.webp', min: 0, max: 100, value: (d) => d.map, text: (d) => `${d.map} kPa`,
+    label: 'MAP(kPa)', face: 'img/map.webp', min: 0, max: 100, value: (d) => d.map, text: (d) => `${d.map} kPa`,
     scale: [[0, -0.0031], [40, 0.3829], [50, 0.4978], [60, 0.6146], [70, 0.7285],
       [80, 0.8503], [90, 0.9633], [100, 1.0680]],
     box: { top: 0.629, h: 0.076, w: 0.21 },
   },
 };
-// 背景タップ／⇆ボタンで A面（回転計+水温）⇔ B面（電圧計+MAP）を入れ替える
-const DIAL_SIDES = [['rpm', 'coolant'], ['battery', 'map']];
+const DIAL_ORDER = ['rpm', 'coolant', 'battery', 'map'];
 const DIAL_START_DEG = 150;
 const DIAL_SWEEP_DEG = 240;
+const SWIPE_THRESHOLD_PX = 56;
 
 const FAULTS = [
-  { key: 'coolant', lamp: '水温', label: '水温センサーエラー' },
-  { key: 'intake', lamp: '吸気', label: '吸気温度センサーエラー' },
-  { key: 'fuelPump', lamp: '燃料', label: '燃料ポンプ回路エラー' },
-  { key: 'throttle', lamp: 'スロットル', label: 'スロットルポット回路エラー' },
+  { key: 'coolant', icon: '🌡️', lamp: '水温', label: '水温センサーエラー' },
+  { key: 'intake', icon: '💨', lamp: '吸気', label: '吸気温度センサーエラー' },
+  { key: 'fuelPump', icon: '⛽', lamp: '燃料', label: '燃料ポンプ回路エラー' },
+  { key: 'throttle', icon: '⚡', lamp: 'スロットル', label: 'スロットルポット回路エラー' },
+];
+
+// 接続中のグラフ（GaugeScreen.kt の ChartsView と同じ7項目）
+const LIVE_CHARTS = [
+  { label: '回転数(rpm)', value: (d) => d.rpm },
+  { label: '水温(°C)', value: (d) => d.coolant },
+  { label: '吸気温度(°C)', value: (d) => d.intake },
+  { label: 'MAP(kPa)', value: (d) => d.map },
+  { label: 'バッテリー電圧(V)', value: (d) => d.battery },
+  { label: '点火進角(°)', value: (d) => d.ignition },
+  { label: 'ラムダ電圧(mV)', value: (d) => d.lambdaMv },
+];
+// 保存したログのグラフ（LogChartScreen.kt / LogFileParser.kt と同じ列）
+const LOG_COLUMNS = [
+  ['engineSpeed', '回転数(rpm)'],
+  ['waterTemp', '水温(°C)'],
+  ['intakeAirTemp', '吸気温度(°C)'],
+  ['throttleVoltage', 'スロットル電圧(V)'],
+  ['manifoldPressure', 'MAP(kPa)'],
+  ['idleBypassPos', 'IACポジション'],
+  ['mainVoltage', 'バッテリー電圧(V)'],
+  ['lambdaVoltage_mV', 'ラムダ電圧(mV)'],
 ];
 
 // 部品テスト（Android版 ActuatorControls.kt / MemsCommand.kt と同じ）。
@@ -142,6 +176,7 @@ const ACTUATORS = [
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pad = (n, w = 2) => String(n).padStart(w, '0');
 function signed(n) { return (n > 0 ? '+' : '') + n; }
 function hex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
@@ -342,9 +377,9 @@ function parseFrames(f80, f7d) {
 let session = 0; // 切断・デモ開始などで増やし、古いループを止める
 let userStopped = true;
 let ecuId = null;
+let demoTimer = null;
 // エラークリア・部品テストなど、データ取得の合間に送る1回きりのコマンド
 const commandQueue = [];
-let demoTimer = null;
 
 async function establish(my, attempts) {
   for (let a = 1; a <= attempts; a++) {
@@ -394,7 +429,7 @@ async function pollLoop(my) {
     }
     fails = 0;
     cycle++;
-    render(parseFrames(f80, last7d));
+    onData(parseFrames(f80, last7d), true);
     rateCount++;
     if (rateCount === 20) {
       const perSec = 20000 / (performance.now() - rateStart);
@@ -424,7 +459,7 @@ async function reconnectLoop(my) {
 async function runBle() {
   const my = ++session;
   userStopped = false;
-  setState('connecting');
+  if (state !== 'reconnecting') setState('connecting');
   acquireWakeLock();
   if (!(await establish(my, CONNECT_ATTEMPTS))) {
     if (my === session) failConnection('接続に失敗しました。配線・電源・ECUの状態を確認してもう一度お試しください。');
@@ -475,6 +510,15 @@ async function chooseDeviceAndConnect() {
   runBle();
 }
 
+// アナログ画面の再接続ボタン: 自動つなぎ直しの待ち時間を待たずに、すぐつなぎ直す
+function reconnectNow() {
+  if (!device || state === 'demo') return;
+  log('手動でつなぎ直し');
+  try { if (device.gatt.connected) device.gatt.disconnect(); } catch (e) { /* 無視 */ }
+  setState('reconnecting');
+  runBle();
+}
+
 function stopAll() {
   userStopped = true;
   session++;
@@ -483,6 +527,7 @@ function stopAll() {
   if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
   try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e) { /* 無視 */ }
   releaseWakeLock();
+  stopLogging();
   setState('idle');
 }
 
@@ -508,11 +553,6 @@ async function acquireWakeLock() {
 function releaseWakeLock() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && ['connected', 'connecting', 'reconnecting', 'demo'].includes(state)) {
-    acquireWakeLock();
-  }
-});
 
 // =====================================================================
 // デモモード（Android版 MockEcuDataSource と同じく、実車なしで画面を試す）
@@ -534,72 +574,266 @@ function startDemo() {
     else if (phase >= 11 && phase < 14) rev = 1;
     else if (phase >= 14 && phase < 17) rev = 1 - (phase - 14) / 3;
     const wobble = Math.sin(t * 2.3) * 25;
-    const rpm = Math.round(860 + wobble + rev * 2400);
-    const coolant = Math.round(Math.min(88, 62 + t * 0.6));
-    const tpsV = 0.56 + rev * 1.4;
-    render({
-      rpm, coolant, intake: 34 + Math.round(t * 0.05) % 3, map: Math.round(34 + rev * 30 + Math.sin(t) * 1.5),
-      battery: 14.1 + Math.sin(t * 0.7) * 0.08, tpsV, parkNeutral: false,
+    onData({
+      rpm: Math.round(860 + wobble + rev * 2400),
+      coolant: Math.round(Math.min(88, 62 + t * 0.6)),
+      intake: 34 + (Math.round(t * 0.05) % 3),
+      map: Math.round(34 + rev * 30 + Math.sin(t) * 1.5),
+      battery: 14.1 + Math.sin(t * 0.7) * 0.08,
+      tpsV: 0.56 + rev * 1.4,
+      parkNeutral: false,
       faults: { coolant: false, intake: false, fuelPump: false, throttle: false },
       idleSwitch: rev === 0, iac: 45, idleDeviation: Math.round(wobble), ignition: 12 + rev * 18,
       coilMs: 3.2, throttleAngle: rev * 40, afr: 14.7, lambdaMv: Math.round(450 + Math.sin(t * 5) * 380),
       lambdaFreq: 12, lambdaDuty: 50, lambdaStatus: true, closedLoop: rev === 0, ltft: 2, stft: 0,
       canister: 0, idleBase: 30, idleError: 0,
-    });
+    }, false);
   }, 250);
 }
 
 // =====================================================================
-// 画面
+// ログ記録（DataLogger.kt と同じCSV。iPhoneでは端末内のIndexedDBに保存）
 // =====================================================================
 
-let state = 'idle';
-let view = store('view') || 'analog';
-let dialSide = Number(store('dialSide')) === 1 ? 1 : 0;
+let dbPromise = null;
+function openDb() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open('rovermems', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        db.createObjectStore('logs', { keyPath: 'id' });
+        db.createObjectStore('chunks', { autoIncrement: true }).createIndex('logId', 'logId');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    // 容量が足りなくなっても勝手に消されないようにお願いする（対応ブラウザのみ）
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 無視 */ }
+  }
+  return dbPromise;
+}
+function txDone(t) {
+  return new Promise((resolve, reject) => {
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error);
+  });
+}
+function reqResult(r) {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function listLogs() {
+  const db = await openDb();
+  const all = await reqResult(db.transaction('logs').objectStore('logs').getAll());
+  return all.sort((a, b) => b.created - a.created);
+}
+async function readLogText(id) {
+  const db = await openDb();
+  const t = db.transaction('chunks');
+  const chunks = await reqResult(t.objectStore('chunks').index('logId').getAll(IDBKeyRange.only(id)));
+  return chunks.map((c) => c.text).join('');
+}
+async function deleteLog(id) {
+  const db = await openDb();
+  const t = db.transaction(['logs', 'chunks'], 'readwrite');
+  t.objectStore('logs').delete(id);
+  const keys = await reqResult(t.objectStore('chunks').index('logId').getAllKeys(IDBKeyRange.only(id)));
+  for (const k of keys) t.objectStore('chunks').delete(k);
+  await txDone(t);
+}
+async function enforceRetention() {
+  const logs = await listLogs();
+  for (const old of logs.slice(MAX_LOG_FILES)) await deleteLog(old.id);
+}
+
+const logger = { cur: null, buf: [], lastSampleAt: 0, writing: Promise.resolve() };
+
+function formatClock(date, withMs) {
+  const base = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return withMs ? `${base}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}` : base;
+}
+function logFileName(date) {
+  return `memsgauge_${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+    + `_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.csv`;
+}
+// Kotlin の Float と同じ書き方（14 → "14.0"、0.56 → "0.56"）
+function floatText(x, digits) {
+  const v = Number(x.toFixed(digits));
+  return Number.isInteger(v) ? v.toFixed(1) : String(v);
+}
+// 実車のデータだけを記録する（デモは記録しない、Android版と同じ）
+function logSample(d) {
+  const now = new Date();
+  if (!logger.cur) {
+    logger.cur = { id: now.getTime(), name: logFileName(now), created: now.getTime(), updated: now.getTime(), size: 0 };
+    logger.buf = [LOG_HEADER];
+    log(`ログ記録開始 ${logger.cur.name}`);
+    updateRecordingLine();
+  }
+  logger.lastSampleAt = Date.now();
+  logger.buf.push([
+    formatClock(now, true), d.rpm, d.coolant, d.intake, floatText(d.tpsV, 2), d.map, d.iac,
+    floatText(d.battery, 1), d.idleSwitch, d.closedLoop ?? '', d.lambdaMv ?? '',
+  ].join(','));
+}
+function flushLog() {
+  const cur = logger.cur;
+  if (!cur || !logger.buf.length) return logger.writing;
+  const text = logger.buf.join('\n') + '\n';
+  logger.buf = [];
+  cur.size += text.length;
+  cur.updated = Date.now();
+  const meta = { ...cur };
+  logger.writing = logger.writing.then(async () => {
+    const db = await openDb();
+    const t = db.transaction(['logs', 'chunks'], 'readwrite');
+    t.objectStore('logs').put(meta);
+    t.objectStore('chunks').add({ logId: meta.id, text });
+    await txDone(t);
+  }).catch((e) => log(`✗ ログ保存失敗: ${e.message}`));
+  return logger.writing;
+}
+function stopLogging() {
+  if (!logger.cur) return;
+  const name = logger.cur.name;
+  flushLog();
+  logger.cur = null;
+  logger.writing = logger.writing.then(enforceRetention).catch(() => {});
+  log(`ログ記録終了 ${name}`);
+  updateRecordingLine();
+}
+setInterval(() => {
+  if (!logger.cur) return;
+  flushLog();
+  // 接続が30秒途切れたら記録を終える。セル中の一瞬の切断は同じファイルに続く
+  if (Date.now() - logger.lastSampleAt > LOG_AUTO_STOP_AFTER_MS) stopLogging();
+}, LOG_FLUSH_INTERVAL_MS);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushLog();
+  else if (['connected', 'connecting', 'reconnecting', 'demo'].includes(state)) acquireWakeLock();
+});
+window.addEventListener('pagehide', () => { flushLog(); });
+
+// =====================================================================
+// 画面の状態
+// =====================================================================
+
+let state = 'idle'; // idle | connecting | connected | reconnecting | error | demo
+let screen = 'connect'; // connect | live | actuator | logs | logchart
+let mode = 'simple'; // simple | detail | charts | analog（接続したら毎回シンプルから）
+let backStack = [];
 let lastData = null;
+let history = [];
+let slots = (store('analogSlots') || 'rpm,coolant').split(',');
+if (slots.length !== 2 || !slots.every((s) => DIALS[s])) slots = ['rpm', 'coolant'];
+
+function isLive() { return ['connecting', 'connected', 'reconnecting', 'demo'].includes(state); }
+
+function onData(d, record) {
+  lastData = d;
+  history.push(d);
+  if (history.length > MAX_HISTORY_SIZE) history.shift();
+  if (record) logSample(d);
+  render();
+}
 
 function setState(next, message) {
+  const wasLive = isLive();
   state = next;
-  const badge = $('badge');
-  const labels = {
-    idle: ['未接続', ''],
-    connecting: ['接続中…', 'warn'],
-    connected: [KNOWN_ECU_IDS[ecuId] || `MEMS 接続済み(ID: ${ecuId})`, 'ok'],
-    reconnecting: ['再接続中…', 'warn'],
-    error: ['接続エラー', 'ng'],
-    demo: ['デモモード', 'demo'],
-  };
-  badge.textContent = labels[next][0];
-  badge.className = 'badge ' + labels[next][1];
-
-  const live = next !== 'idle' && next !== 'error';
-  $('tabs').hidden = !live;
-  $('btnStop').hidden = !live;
-  $('btnStop').textContent = next === 'demo' ? '終了' : '切断';
+  const live = isLive();
+  if (live && !wasLive) {
+    mode = 'simple';
+    history = [];
+    lastData = null;
+    showScreen('live', false);
+  }
+  if (!live) {
+    lastData = null;
+    history = [];
+    if (screen === 'live' || screen === 'actuator') { backStack = []; showScreen('connect', false); }
+  }
   $('connectMsg').hidden = !message;
   $('connectMsg').textContent = message || '';
   $('btnReconnect').hidden = !(next === 'error' && device);
   $('btnConnect').textContent = next === 'error' && device ? '別のアダプターを選ぶ' : 'Bluetoothで接続';
-  if (next === 'idle' || next === 'error') {
-    lastData = null;
-    updateActuatorAvailability(null);
-  }
-  showView(live ? view : 'connect');
+  $('btnStop').textContent = next === 'demo' ? '終了' : '切断';
+  updateBar();
+  render();
 }
 
-function showView(name) {
+function showScreen(name, pushBack = true) {
+  if (pushBack && screen !== name) backStack.push(screen);
+  screen = name;
   const sections = {
-    connect: 'viewConnect', analog: 'viewAnalog', simple: 'viewSimple', detail: 'viewDetail', actuator: 'viewActuator',
+    connect: 'viewConnect', live: 'viewLive', actuator: 'viewActuator', logs: 'viewLogs', logchart: 'viewLogChart',
   };
-  for (const [key, id] of Object.entries(sections)) $(id).hidden = key !== name;
-  document.body.classList.toggle('mode-analog', name === 'analog');
-  for (const b of $('tabs').querySelectorAll('button')) b.classList.toggle('active', b.dataset.view === name);
-  if (name !== 'connect') {
-    view = name;
-    store('view', name);
-  }
-  if (lastData) render(lastData);
+  const analog = name === 'live' && mode === 'analog';
+  for (const [key, id] of Object.entries(sections)) $(id).hidden = key !== name || analog;
+  $('viewAnalog').hidden = !analog;
+  document.body.classList.toggle('mode-analog', analog);
+  $('menu').hidden = true;
+  if (name === 'logs') refreshLogList();
+  updateBar();
+  render();
+  window.scrollTo(0, 0);
 }
+function goBack() {
+  let prev = backStack.pop() || 'connect';
+  if ((prev === 'live' || prev === 'actuator') && !isLive()) prev = 'connect';
+  showScreen(prev, false);
+}
+function setMode(next) {
+  mode = next;
+  showScreen('live', false);
+}
+
+function updateBar() {
+  const title = $('barTitle');
+  title.className = 'title';
+  if (screen === 'live') {
+    const labels = {
+      connecting: ['接続中…', 'warn'],
+      connected: [KNOWN_ECU_IDS[ecuId] || `MEMS 接続済み(ID: ${ecuId})`, 'ok'],
+      reconnecting: ['再接続中…', 'warn'],
+      demo: ['デモモード', 'demo'],
+    };
+    const [text, cls] = labels[state] || ['未接続', ''];
+    title.textContent = text;
+    title.className = `title badge ${cls}`;
+  } else {
+    title.textContent = {
+      connect: 'ローバーミニ MEMS診断', actuator: '部品テスト', logs: '記録済みログ', logchart: logChartName,
+    }[screen];
+  }
+  $('btnMenu').hidden = screen !== 'live';
+  for (const b of $('menu').querySelectorAll('[data-mode]')) b.classList.toggle('active', b.dataset.mode === mode);
+  const reconnecting = state === 'reconnecting' || state === 'error';
+  $('btnAnalogReconnect').hidden = !reconnecting;
+}
+
+// ---------- 夜間モード（時間帯で自動、ボタンでその場だけ切り替え） ----------
+let nightOverride = null;
+function isAutoNight() {
+  const h = new Date().getHours();
+  return h >= NIGHT_START_HOUR || h < NIGHT_END_HOUR;
+}
+function applyNight() {
+  const night = nightOverride ?? isAutoNight();
+  $('nightOverlay').hidden = !night;
+  for (const id of ['btnNight', 'btnNightAnalog']) $(id).textContent = night ? '☀️' : '🌙';
+}
+function toggleNight() {
+  nightOverride = !(nightOverride ?? isAutoNight());
+  applyNight();
+}
+
+// =====================================================================
+// 描画
+// =====================================================================
 
 function dialAngle(dial, v) {
   const pts = dial.scale;
@@ -613,7 +847,7 @@ function dialAngle(dial, v) {
 }
 
 function setupDials() {
-  DIAL_SIDES[dialSide].forEach((key, slot) => {
+  slots.forEach((key, slot) => {
     const dial = DIALS[key];
     const el = $(`gauge${slot}`);
     el.querySelector('.face').src = dial.face;
@@ -626,81 +860,37 @@ function setupDials() {
     el.querySelector('.needle').style.setProperty('--rot', `${dialAngle(dial, dial.min) - 270}deg`);
   });
 }
-function flipDials() {
-  dialSide = 1 - dialSide;
-  store('dialSide', String(dialSide));
+function saveSlots() {
+  store('analogSlots', slots.join(','));
   setupDials();
-  if (lastData) render(lastData);
+  render();
+}
+// 背景スワイプ: 今表示されていない2つのメーターに丸ごと入れ替える（A面/B面）
+function flipDials() {
+  slots = DIAL_ORDER.filter((k) => !slots.includes(k)).slice(0, 2);
+  saveSlots();
+}
+// ⋮ボタン: その枠に表示するメーターを選ぶ（もう一方の枠に出ていれば入れ替え）
+function pickDial(slot) {
+  const box = $('pickOptions');
+  box.innerHTML = '';
+  for (const key of DIAL_ORDER) {
+    const b = document.createElement('button');
+    b.textContent = DIALS[key].label;
+    if (slots[slot] === key) b.className = 'current';
+    b.addEventListener('click', () => {
+      const other = 1 - slot;
+      if (slots[other] === key) slots[other] = slots[slot];
+      slots[slot] = key;
+      $('pickDialog').close();
+      saveSlots();
+    });
+    box.appendChild(b);
+  }
+  $('pickDialog').showModal();
 }
 
 function hasFault(d) { return FAULTS.some((f) => d.faults[f.key]); }
-
-function renderBanner(el, d) {
-  const bad = hasFault(d);
-  el.textContent = bad ? 'センサーエラー・詳細を確認' : 'センサーエラーなし';
-  el.className = 'banner' + (bad ? ' ng' : '');
-}
-
-function buildStatic() {
-  // シンプル画面のカード
-  const cards = $('cards');
-  for (const [key, m] of Object.entries(METRICS)) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<div class="head"><span></span><button class="info" aria-label="説明">？</button></div><div class="v" data-metric="${key}">--</div>`;
-    card.querySelector('.head span').textContent = m.label;
-    card.querySelector('.info').addEventListener('click', () => {
-      $('infoTitle').textContent = m.label;
-      $('infoDesc').textContent = m.desc;
-      $('infoRange').textContent = m.range;
-      $('infoDialog').showModal();
-    });
-    cards.appendChild(card);
-  }
-  // 部品テストの行
-  for (const a of ACTUATORS) {
-    const row = document.createElement('div');
-    row.className = 'act-row';
-    const name = document.createElement('div');
-    name.className = 'act-name';
-    name.textContent = a.label;
-    if (a.unsupported) {
-      const note = document.createElement('small');
-      note.textContent = '電動ファンはECU制御ではありません';
-      name.append(note);
-    }
-    const buttons = document.createElement('div');
-    buttons.className = 'act-buttons';
-    const addButton = (text, cmd) => {
-      const b = document.createElement('button');
-      b.className = 'primary act-btn';
-      b.textContent = text;
-      if (a.unsupported) b.dataset.unsupported = '1';
-      b.addEventListener('click', async () => {
-        const ok = await queueCommand(cmd, `${a.label} ${text}`);
-        showActuatorResult(`${a.label}${a.off != null ? ` ${text}` : ''}: ${ok ? '実行しました' : '実行に失敗しました'}`, ok);
-      });
-      buttons.append(b);
-    };
-    if (a.off == null) {
-      addButton('テスト実行', a.on);
-    } else {
-      addButton('ON', a.on);
-      addButton('OFF', a.off);
-    }
-    row.append(name, buttons);
-    $('actRows').appendChild(row);
-  }
-  // アナログ画面のエラーランプ
-  for (const f of FAULTS) {
-    const lamp = document.createElement('span');
-    lamp.className = 'lamp';
-    lamp.dataset.fault = f.key;
-    lamp.innerHTML = '<i></i>';
-    lamp.append(f.lamp);
-    $('lamps').appendChild(lamp);
-  }
-}
 
 function detailRows(d) {
   const onOff = (b) => (b == null ? '--' : b ? '有効' : '無効');
@@ -733,19 +923,161 @@ function detailRows(d) {
   ];
 }
 
-function fillTable(table, rows, cellClass) {
+function fillTable(table, rows) {
   if (table.rows.length !== rows.length) {
     table.innerHTML = '';
     for (let i = 0; i < rows.length; i++) table.insertRow().append(document.createElement('td'), document.createElement('td'));
   }
-  rows.forEach(([label, value, cls], i) => {
+  rows.forEach(([label, value], i) => {
     const [a, b] = table.rows[i].cells;
     if (a.textContent !== label) a.textContent = label;
-    if (b.textContent !== value) b.textContent = value;
-    b.className = cls || cellClass || '';
+    if (typeof value === 'string') {
+      if (b.textContent !== value) b.textContent = value;
+    } else {
+      b.replaceChildren(value);
+    }
   });
 }
+function faultCell(isFaulty) {
+  const span = document.createElement('span');
+  span.className = 'fault-cell';
+  const lamp = document.createElement('i');
+  lamp.className = 'fault-lamp' + (isFaulty ? ' on' : '');
+  span.append(isFaulty ? 'エラーあり' : '正常', lamp);
+  return span;
+}
 
+// 折れ線グラフ（LineChart.kt と同じく、最小・中間・最大の目盛り＋必要なら時刻）
+function drawLineChart(canvas, values, timeLabels) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const lineColor = css.getPropertyValue('--accent').trim();
+  const muted = css.getPropertyValue('--muted').trim();
+  const clean = values.filter((v) => v != null && !Number.isNaN(v));
+  if (clean.length < 2) return;
+  const timeStrip = timeLabels && timeLabels.length ? 20 : 0;
+  const plotH = h - timeStrip;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of clean) { if (v < min) min = v; if (v > max) max = v; }
+  const range = max - min > 0.0001 ? max - min : 1;
+  const axisW = 46;
+  const chartW = w - axisW;
+  const stepX = chartW / (values.length - 1);
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.textBaseline = 'middle';
+  for (const f of [0, 0.5, 1]) {
+    const y = plotH - f * (plotH - 2) - 1;
+    ctx.strokeStyle = muted;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath(); ctx.moveTo(axisW, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = muted;
+    const v = min + f * range;
+    ctx.fillText(Number.isInteger(v) ? String(v) : v.toFixed(1), 2, Math.min(Math.max(y, 7), plotH - 6));
+  }
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  let started = false;
+  values.forEach((v, i) => {
+    if (v == null || Number.isNaN(v)) return;
+    const x = axisW + i * stepX;
+    const y = plotH - ((v - min) / range) * (plotH - 2) - 1;
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  if (timeStrip) {
+    ctx.fillStyle = muted;
+    ctx.textAlign = 'center';
+    timeLabels.forEach((label, i) => {
+      const f = timeLabels.length > 1 ? i / (timeLabels.length - 1) : 0;
+      const x = Math.min(Math.max(axisW + f * chartW, axisW + 16), w - 16);
+      ctx.fillText(label, x, plotH + timeStrip * 0.6);
+    });
+    ctx.textAlign = 'left';
+  }
+}
+function makeChartCard(label, withTime) {
+  const card = document.createElement('div');
+  card.className = 'chart-card';
+  const l = document.createElement('div');
+  l.className = 'label';
+  l.textContent = label;
+  const canvas = document.createElement('canvas');
+  if (withTime) canvas.className = 'with-time';
+  card.append(l, canvas);
+  return { card, canvas };
+}
+
+let liveChartCanvases = [];
+function render() {
+  const d = lastData;
+  updateActuatorAvailability(d);
+  if (screen !== 'live') return;
+
+  if (mode === 'analog') {
+    $('analogWaiting').hidden = !!d;
+    $('dials').style.visibility = d ? '' : 'hidden';
+    if (!d) return;
+    slots.forEach((key, slot) => {
+      const dial = DIALS[key];
+      const el = $(`gauge${slot}`);
+      el.querySelector('.needle').style.setProperty('--rot', `${dialAngle(dial, dial.value(d)) - 270}deg`);
+      el.querySelector('.digital span').textContent = dial.text(d);
+    });
+    for (const lamp of $('lamps').children) lamp.classList.toggle('on', d.faults[lamp.dataset.fault]);
+    return;
+  }
+
+  $('waiting').hidden = !!d;
+  $('banner').hidden = !d;
+  $('panelSimple').hidden = !d || mode !== 'simple';
+  $('panelDetail').hidden = !d || mode !== 'detail';
+  $('panelCharts').hidden = !d || mode !== 'charts';
+  if (!d) return;
+  const bad = hasFault(d);
+  $('banner').textContent = bad ? 'センサーエラー・詳細を確認' : 'センサーエラーなし';
+  $('banner').className = 'banner' + (bad ? ' ng' : '');
+
+  if (mode === 'simple') {
+    for (const el of $('cards').querySelectorAll('.v')) el.textContent = METRICS[el.dataset.metric].fmt(d);
+  } else if (mode === 'detail') {
+    fillTable($('detailRows'), detailRows(d));
+    fillTable($('faultRows'), FAULTS.map((f) => [f.label, faultCell(d.faults[f.key])]));
+  } else if (mode === 'charts') {
+    $('chartsWaiting').hidden = history.length >= 2;
+    $('liveCharts').hidden = history.length < 2;
+    if (history.length >= 2) {
+      LIVE_CHARTS.forEach((c, i) => drawLineChart(liveChartCanvases[i], history.map(c.value)));
+    }
+  }
+}
+
+function updateRecordingLine() {
+  const line = $('recordingLine');
+  line.hidden = !logger.cur;
+  if (logger.cur) line.textContent = `記録中: ${logger.cur.name}`;
+}
+let liveMsgTimer = null;
+function showLiveMessage(text) {
+  $('liveMsg').textContent = text;
+  $('liveMsg').hidden = false;
+  clearTimeout(liveMsgTimer);
+  liveMsgTimer = setTimeout(() => { $('liveMsg').hidden = true; }, 2000);
+}
+
+// ---------- 部品テスト ----------
 let actResultTimer = null;
 function showActuatorResult(text, ok) {
   const el = $('actResult');
@@ -753,9 +1085,8 @@ function showActuatorResult(text, ok) {
   el.className = 'act-result ' + (ok ? 'ok' : 'ng');
   el.hidden = false;
   clearTimeout(actResultTimer);
-  actResultTimer = setTimeout(() => { el.hidden = true; }, 3000);
+  actResultTimer = setTimeout(() => { el.hidden = true; }, 2000);
 }
-
 // 安全のため、回転数0（エンジン停止）を確認できた時だけ部品テストを押せる（Android版と同じ）
 function updateActuatorAvailability(d) {
   const canTest = d != null && d.rpm === 0;
@@ -765,49 +1096,244 @@ function updateActuatorAvailability(d) {
   for (const b of document.querySelectorAll('.act-btn')) b.disabled = !canTest || b.dataset.unsupported === '1';
 }
 
-function render(d) {
-  lastData = d;
-  updateActuatorAvailability(d);
-  if (view === 'analog' && !$('viewAnalog').hidden) {
-    DIAL_SIDES[dialSide].forEach((key, slot) => {
-      const dial = DIALS[key];
-      const el = $(`gauge${slot}`);
-      el.querySelector('.needle').style.setProperty('--rot', `${dialAngle(dial, dial.value(d)) - 270}deg`);
-      el.querySelector('.digital span').textContent = dial.text(d);
-    });
-    for (const lamp of $('lamps').children) lamp.classList.toggle('on', d.faults[lamp.dataset.fault]);
-  } else if (view === 'simple' && !$('viewSimple').hidden) {
-    renderBanner($('bannerSimple'), d);
-    for (const el of $('cards').querySelectorAll('.v')) el.textContent = METRICS[el.dataset.metric].fmt(d);
-  } else if (view === 'detail' && !$('viewDetail').hidden) {
-    renderBanner($('bannerDetail'), d);
-    fillTable($('detailRows'), detailRows(d));
-    fillTable($('faultRows'), FAULTS.map((f) => [
-      f.label, d.faults[f.key] ? 'エラーあり' : '正常', d.faults[f.key] ? 'fault-ng' : 'fault-ok',
-    ]));
+// ---------- ログ一覧・ログのグラフ ----------
+let logChartName = '';
+async function refreshLogList() {
+  if (logger.cur) await flushLog();
+  let logs = [];
+  try {
+    logs = await listLogs();
+  } catch (e) {
+    log(`✗ ログ一覧の読み込み失敗: ${e.message}`);
+  }
+  const list = $('logList');
+  list.innerHTML = '';
+  $('logsEmpty').hidden = logs.length > 0;
+  for (const meta of logs) {
+    const item = document.createElement('div');
+    item.className = 'log-item';
+    const created = new Date(meta.created);
+    const dateText = `${created.getFullYear()}/${pad(created.getMonth() + 1)}/${pad(created.getDate())} ${formatClock(created)}`;
+    const recording = logger.cur && logger.cur.id === meta.id;
+    item.innerHTML = '<div class="name"></div><div class="meta"></div><div class="actions"></div>';
+    item.querySelector('.name').textContent = meta.name;
+    item.querySelector('.meta').textContent = `${dateText} ・ ${(meta.size / 1024).toFixed(1)} KB${recording ? ' ・ 記録中' : ''}`;
+    const actions = item.querySelector('.actions');
+    const add = (text, fn, cls) => {
+      const b = document.createElement('button');
+      b.textContent = text;
+      if (cls) b.className = cls;
+      b.addEventListener('click', fn);
+      actions.append(b);
+      return b;
+    };
+    add('グラフで見る', () => openLogChart(meta));
+    add('共有', () => shareLog(meta));
+    const del = add('削除', async () => {
+      if (!confirm(`${meta.name} を削除しますか？`)) return;
+      await deleteLog(meta.id);
+      refreshLogList();
+    }, 'danger');
+    if (recording) del.disabled = true;
+    list.append(item);
   }
 }
 
-// ---------- ボタン ----------
+async function shareLog(meta) {
+  if (logger.cur && logger.cur.id === meta.id) await flushLog();
+  const text = await readLogText(meta.id);
+  const file = new File([text], meta.name, { type: 'text/csv' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: meta.name });
+      return;
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') return; // 共有画面を閉じただけ
+    log(`共有できなかったのでダウンロードに切り替え: ${e.message}`);
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = meta.name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// LogFileParser.kt と同じ: 数値の列だけを、時刻つきで取り出す
+function parseLogCsv(text) {
+  let header = null;
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith('#')) header = line.slice(1).split(',');
+    else if (header && line.trim()) rows.push(line.split(','));
+  }
+  if (!header) return [];
+  const timeIndex = header.indexOf('time');
+  // 時刻だけで日付が無いので、深夜0時をまたいだら+24時間して単調増加にする
+  let dayOffset = 0;
+  let last = -1;
+  const stamps = rows.map((row) => {
+    const m = /^(\d+):(\d+):(\d+)(?:\.(\d+))?$/.exec(row[timeIndex] || '');
+    if (!m) return null;
+    const raw = ((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000 + +(m[4] || 0);
+    if (last >= 0 && raw + dayOffset < last) dayOffset += 86400000;
+    last = raw + dayOffset;
+    return last;
+  });
+  const series = [];
+  for (const [name, label] of LOG_COLUMNS) {
+    const col = header.indexOf(name);
+    if (col < 0) continue;
+    const values = [];
+    const times = [];
+    rows.forEach((row, i) => {
+      const v = parseFloat(row[col]);
+      if (!Number.isNaN(v) && stamps[i] != null) { values.push(v); times.push(stamps[i]); }
+    });
+    if (values.length) series.push({ label, values, times });
+  }
+  return series;
+}
+// 時刻の目盛りは開始・中間2点・終了の4点（LogChartScreen.kt と同じ）
+function timeAxisLabels(times) {
+  if (times.length < 2) return [];
+  return [0, 1, 2, 3].map((i) => {
+    const ms = times[Math.floor((i / 3) * (times.length - 1))] % 86400000;
+    return `${pad(Math.floor(ms / 3600000))}:${pad(Math.floor(ms / 60000) % 60)}`;
+  });
+}
+async function openLogChart(meta) {
+  logChartName = meta.name;
+  showScreen('logchart');
+  $('logChartMsg').textContent = '読み込み中…';
+  $('logChartMsg').hidden = false;
+  $('logCharts').innerHTML = '';
+  if (logger.cur && logger.cur.id === meta.id) await flushLog();
+  const series = parseLogCsv(await readLogText(meta.id));
+  if (!series.length) {
+    $('logChartMsg').textContent = 'グラフに表示できるデータがありません';
+    return;
+  }
+  $('logChartMsg').hidden = true;
+  const drawn = series.map((s) => {
+    const { card, canvas } = makeChartCard(s.label, true);
+    $('logCharts').append(card);
+    return { s, canvas };
+  });
+  for (const { s, canvas } of drawn) drawLineChart(canvas, s.values, timeAxisLabels(s.times));
+}
+
+// ---------- 時計 ----------
+function tickClock() { $('clock').textContent = formatClock(new Date()); }
+
+// =====================================================================
+// 画面の部品を組み立てて、ボタンをつなぐ
+// =====================================================================
+
+function buildStatic() {
+  // シンプル画面のカード
+  for (const [key, m] of Object.entries(METRICS)) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="head"><span></span><button class="info" aria-label="説明">？</button></div><div class="v" data-metric="${key}">--</div>`;
+    card.querySelector('.head span').textContent = m.label;
+    card.querySelector('.info').addEventListener('click', () => {
+      $('infoTitle').textContent = m.label;
+      $('infoDesc').textContent = m.desc;
+      $('infoRange').textContent = m.range;
+      $('infoDialog').showModal();
+    });
+    $('cards').appendChild(card);
+  }
+  // グラフ画面
+  liveChartCanvases = LIVE_CHARTS.map((c) => {
+    const { card, canvas } = makeChartCard(c.label, false);
+    $('liveCharts').append(card);
+    return canvas;
+  });
+  // アナログ画面のエラーランプ
+  for (const f of FAULTS) {
+    const lamp = document.createElement('span');
+    lamp.className = 'lamp';
+    lamp.dataset.fault = f.key;
+    lamp.title = f.lamp;
+    lamp.textContent = f.icon;
+    $('lamps').appendChild(lamp);
+  }
+  // 部品テストの行
+  for (const a of ACTUATORS) {
+    const row = document.createElement('div');
+    row.className = 'act-row';
+    const name = document.createElement('div');
+    name.className = 'act-name';
+    name.textContent = a.label;
+    if (a.unsupported) {
+      const note = document.createElement('small');
+      note.textContent = '電動ファンはECU制御ではありません';
+      name.append(note);
+    }
+    const buttons = document.createElement('div');
+    buttons.className = 'act-buttons';
+    const addButton = (text, cmd) => {
+      const b = document.createElement('button');
+      b.className = 'primary act-btn';
+      b.textContent = text;
+      if (a.unsupported) b.dataset.unsupported = '1';
+      b.addEventListener('click', async () => {
+        const ok = await queueCommand(cmd, `${a.label} ${text}`);
+        showActuatorResult(`${a.label}: ${ok ? '実行しました' : '実行に失敗しました'}`, ok);
+      });
+      buttons.append(b);
+    };
+    if (a.off == null) {
+      addButton('テスト実行', a.on);
+    } else {
+      addButton('ON', a.on);
+      addButton('OFF', a.off);
+    }
+    row.append(name, buttons);
+    $('actRows').appendChild(row);
+  }
+}
+
 function wireUi() {
   $('btnConnect').addEventListener('click', chooseDeviceAndConnect);
   $('btnReconnect').addEventListener('click', () => { if (device) runBle(); });
   $('btnDemo').addEventListener('click', startDemo);
+  $('btnOpenLogs').addEventListener('click', () => showScreen('logs'));
   $('btnStop').addEventListener('click', () => { log('切断ボタン'); stopAll(); });
-  for (const b of $('tabs').querySelectorAll('button')) b.addEventListener('click', () => showView(b.dataset.view));
-  $('btnFlip').addEventListener('click', flipDials);
-  // 木目の背景（メーター以外）をタップしても切り替え
-  $('viewAnalog').addEventListener('click', (e) => {
-    if (e.target === $('viewAnalog') || e.target === $('dials')) flipDials();
+  $('btnNight').addEventListener('click', toggleNight);
+  $('btnNightAnalog').addEventListener('click', toggleNight);
+  $('btnMenu').addEventListener('click', (e) => { e.stopPropagation(); $('menu').hidden = !$('menu').hidden; });
+  document.addEventListener('click', (e) => { if (!$('menu').contains(e.target)) $('menu').hidden = true; });
+  for (const b of $('menu').querySelectorAll('[data-mode]')) b.addEventListener('click', () => setMode(b.dataset.mode));
+  for (const b of $('menu').querySelectorAll('[data-go]')) b.addEventListener('click', () => showScreen(b.dataset.go));
+  for (const b of document.querySelectorAll('[data-back]')) b.addEventListener('click', goBack);
+  $('btnAnalogBack').addEventListener('click', () => setMode('simple'));
+  $('btnAnalogReconnect').addEventListener('click', reconnectNow);
+  for (const b of document.querySelectorAll('.pick')) b.addEventListener('click', () => pickDial(Number(b.dataset.slot)));
+  // 木目の背景を左右にスワイプすると、表示中でない2つのメーターに入れ替え
+  // （メーター自体は誤タッチで切り替わらないよう対象外。Android版と同じ）
+  let swipeStartX = null;
+  $('viewAnalog').addEventListener('touchstart', (e) => {
+    swipeStartX = e.target.closest('.gauge, button') ? null : e.touches[0].clientX;
+  }, { passive: true });
+  $('viewAnalog').addEventListener('touchend', (e) => {
+    if (swipeStartX == null) return;
+    if (Math.abs(e.changedTouches[0].clientX - swipeStartX) >= SWIPE_THRESHOLD_PX) flipDials();
+    swipeStartX = null;
   });
   $('btnClearFaults').addEventListener('click', async () => {
-    if (!confirm('ECUに記録されたエラーを消去します。よろしいですか？')) return;
     const btn = $('btnClearFaults');
     btn.disabled = true;
     const ok = await queueCommand(CMD.CLEAR_FAULTS, 'エラークリア');
     btn.disabled = false;
-    alert(ok ? 'エラーコードをクリアしました' : 'クリアに失敗しました');
+    showLiveMessage(ok ? 'エラーコードをクリアしました' : 'クリアに失敗しました');
   });
+  $('btnRefreshLogs').addEventListener('click', refreshLogList);
   $('optRaw').addEventListener('change', (e) => { rawLogging = e.target.checked; });
   $('diag').addEventListener('toggle', () => {
     if ($('diag').open) {
@@ -832,14 +1358,19 @@ function wireUi() {
     setTimeout(() => { btn.textContent = '記録をコピー'; }, 2500);
   });
   $('btnClearLog').addEventListener('click', () => { logLines.length = 0; $('log').textContent = ''; });
+  window.addEventListener('resize', () => render());
 }
 
 function init() {
   buildStatic();
   setupDials();
   wireUi();
+  applyNight();
+  setInterval(() => { if (nightOverride == null) applyNight(); }, 60000);
+  tickClock();
+  setInterval(tickClock, 1000);
   if (!navigator.bluetooth) {
-    $('supportNote').innerHTML = '<span class="ng">このブラウザはBluetoothに対応していません。iPhoneでは「Bluefy」、AndroidではChromeで開いてください。デモモードはこのままお試しいただけます。</span>';
+    $('supportNote').innerHTML = '<span class="ng">このブラウザはBluetoothに対応していません。iPhoneでは「Bluefy」、AndroidではChromeで開いてください。デモモードと保存したログはこのままお試しいただけます。</span>';
     $('btnConnect').disabled = true;
   }
   setState('idle');
