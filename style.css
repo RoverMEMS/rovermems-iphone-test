@@ -1,0 +1,155 @@
+:root {
+  --bg: #f4f2ee; --card: #ffffff; --text: #1d1d1b; --muted: #6b6a66; --line: #dddbd5;
+  --accent: #1f5f8b; --ok: #2e7d32; --ng: #c62828; --warn: #b26a00; --lamp-off: #6d6a64;
+  --bar: #1c1a17; --bar-text: #f3efe6;
+  --bar-h: 52px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141412; --card: #201f1c; --text: #ecebe6; --muted: #a09e97; --line: #393731;
+    --accent: #6fb0e0; --ok: #4caf50; --ng: #e05252; --warn: #e0a54a;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 16px; line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  font: inherit; font-weight: 600; border-radius: 10px; padding: 12px 16px; cursor: pointer;
+  border: 1px solid transparent;
+}
+button.primary { background: var(--accent); color: #fff; }
+button.secondary { background: transparent; color: var(--accent); border-color: var(--accent); }
+button:disabled { opacity: 0.4; }
+[hidden] { display: none !important; }
+
+/* ---------- 上のバー ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 8px;
+  min-height: var(--bar-h);
+  padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
+  background: var(--bar); color: var(--bar-text);
+}
+.badge {
+  font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  background: #4a4741; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%;
+}
+.badge.ok { background: var(--ok); color: #fff; }
+.badge.ng { background: var(--ng); color: #fff; }
+.badge.warn { background: var(--warn); color: #fff; }
+.badge.demo { background: #6a5acd; color: #fff; }
+.tabs { display: flex; gap: 2px; margin-left: auto; background: #34312c; border-radius: 9px; padding: 2px; }
+.tabs button {
+  padding: 6px 10px; font-size: 13px; border-radius: 7px; background: transparent; color: var(--bar-text);
+}
+.tabs button.active { background: var(--bar-text); color: var(--bar); }
+.stop { padding: 6px 10px; font-size: 13px; background: transparent; color: var(--bar-text); border-color: #6d6a64; }
+
+main { padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); }
+
+/* ---------- 接続画面 ---------- */
+.connect { max-width: 520px; margin: 0 auto; padding: 32px 0 16px; }
+.connect h1 { font-size: 24px; margin: 0 0 8px; }
+.lead { color: var(--muted); margin: 0 0 20px; }
+.buttons { display: flex; flex-direction: column; gap: 12px; }
+.buttons button { width: 100%; padding: 14px; }
+.msg { background: color-mix(in srgb, var(--ng) 12%, transparent); color: var(--ng); border-radius: 10px; padding: 10px 12px; font-weight: 600; }
+.note { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+.note .ng { color: var(--ng); font-weight: 600; }
+
+/* ---------- アナログ ---------- */
+body.mode-analog main { padding: 0; }
+.analog {
+  position: relative;
+  height: calc(100dvh - var(--bar-h) - env(safe-area-inset-top));
+  background: #2a1c10 url(img/wood.jpg) center / cover no-repeat;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; user-select: none; -webkit-user-select: none;
+}
+.dials {
+  display: flex; flex-direction: column; align-items: center; justify-content: space-evenly;
+  width: 100%; height: 100%;
+}
+.gauge {
+  position: relative; container-type: inline-size;
+  width: min(92vw, calc((100dvh - var(--bar-h) - env(safe-area-inset-top)) / 2 * 0.92));
+  aspect-ratio: 1;
+}
+@media (orientation: landscape) {
+  .dials { flex-direction: row; }
+  .gauge { width: min(46vw, calc((100dvh - var(--bar-h) - env(safe-area-inset-top)) * 0.92)); }
+}
+.gauge img { position: absolute; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.gauge .face { top: 0; }
+/* 針の画像は軸が中心ではなく縦65.2%の位置にある（Android版 AnalogGauge.kt と同じ値） */
+.gauge .needle {
+  top: -15.2%;
+  transform-origin: 50% 65.2%;
+  transform: rotate(var(--rot, -120deg)) scale(1.12);
+  transition: transform 0.4s linear;
+}
+.gauge .digital {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.lamps {
+  position: absolute; left: 50%; bottom: max(8px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; gap: 6px; padding: 5px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.45);
+}
+.lamp { display: flex; align-items: center; gap: 4px; color: #eee; font-size: 11px; white-space: nowrap; }
+.lamp i { width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); display: inline-block; }
+.lamp.on i { background: #ff3b30; box-shadow: 0 0 6px #ff3b30; }
+.flip {
+  position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom));
+  width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 20px;
+}
+
+/* ---------- シンプル・詳細 ---------- */
+.simple, .detail { max-width: 640px; margin: 0 auto; padding: 12px 0 16px; }
+.banner { border-radius: 10px; padding: 6px 12px; text-align: center; font-weight: 700; font-size: 14px; color: #fff; background: var(--ok); }
+.banner.ng { background: var(--ng); }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.card .head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.card .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.info {
+  width: 26px; height: 26px; padding: 0; border-radius: 50%; font-size: 13px;
+  background: transparent; color: var(--accent); border-color: var(--line);
+}
+.detail h2 { font-size: 16px; margin: 18px 0 6px; }
+table.rows { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; margin-top: 10px; }
+table.rows td { padding: 7px 12px; border-bottom: 1px solid var(--line); font-size: 15px; }
+table.rows tr:last-child td { border-bottom: 0; }
+table.rows td:last-child { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+td.fault-ng { color: var(--ng); }
+td.fault-ok { color: var(--ok); }
+#btnClearFaults { width: 100%; margin-top: 12px; }
+
+/* ---------- 診断用の記録 ---------- */
+.diag { max-width: 640px; margin: 16px auto; padding: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); font-size: 14px; color: var(--muted); }
+.diag summary { cursor: pointer; padding: 8px 0; }
+.diag label { display: flex; gap: 8px; align-items: center; }
+.diag-buttons { display: flex; gap: 8px; margin-top: 8px; }
+.diag-buttons button { flex: 1; padding: 8px; font-size: 14px; }
+.diag pre {
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all;
+  max-height: 300px; overflow-y: auto; background: var(--card); border-radius: 8px; padding: 8px; color: var(--text);
+}
+.diag a { color: var(--accent); }
+
+/* ---------- 説明ポップアップ ---------- */
+dialog {
+  border: 0; border-radius: 14px; padding: 18px; max-width: min(420px, 90vw);
+  background: var(--card); color: var(--text);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+dialog h3 { margin: 0 0 8px; }
+dialog .range { color: var(--muted); font-size: 14px; }
+dialog button { width: 100%; }

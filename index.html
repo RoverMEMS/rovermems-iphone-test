@@ -2,338 +2,83 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RoverMEMS 接続テスト</title>
-<style>
-  :root {
-    --bg: #f6f5f2; --card: #ffffff; --text: #1d1d1b; --muted: #6b6a66;
-    --line: #dddbd5; --accent: #1f5f8b; --ok: #2e7d32; --ng: #c62828; --warn: #b26a00;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161615; --card: #22221f; --text: #ecebe6; --muted: #a09e97;
-      --line: #3a3934; --accent: #6fb0e0; --ok: #7bc67e; --ng: #ef6b6b; --warn: #e0a54a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 16px; background: var(--bg); color: var(--text);
-    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    font-size: 16px; line-height: 1.5;
-  }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
-  .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 14px; margin-bottom: 14px;
-  }
-  button {
-    font: inherit; font-weight: 600; border: 0; border-radius: 10px;
-    padding: 12px 16px; background: var(--accent); color: #fff; width: 100%;
-  }
-  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  button:disabled { opacity: 0.4; }
-  .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; }
-  label.opt { display: flex; gap: 8px; align-items: center; font-size: 14px; margin-top: 10px; color: var(--muted); }
-  #status { font-weight: 600; }
-  .ok { color: var(--ok); } .ng { color: var(--ng); } .warn { color: var(--warn); }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .val { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
-  .val .k { font-size: 12px; color: var(--muted); }
-  .val .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .val .u { font-size: 13px; color: var(--muted); margin-left: 2px; }
-  #log {
-    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; white-space: pre-wrap;
-    word-break: break-all; max-height: 320px; overflow-y: auto; margin: 10px 0 0;
-    background: var(--bg); border-radius: 8px; padding: 8px;
-  }
-  .stats { font-size: 13px; color: var(--muted); margin-top: 8px; }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1a17">
+<title>ローバーミニ MEMS診断</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>RoverMEMS 接続テスト</h1>
-<p class="sub">iPhone（Bluefy）からATOM Lite経由でECUにつながるかを確かめる試作ページです。</p>
 
-<div class="card">
-  <div id="status">未接続</div>
-  <div id="support" class="stats"></div>
-  <div class="row" style="margin-top:12px">
-    <button id="btnConnect">接続</button>
-    <button id="btnDisconnect" class="secondary" disabled>切断</button>
+<header class="bar">
+  <div class="badge" id="badge">未接続</div>
+  <nav class="tabs" id="tabs" hidden>
+    <button data-view="analog">アナログ</button>
+    <button data-view="simple">シンプル</button>
+    <button data-view="detail">詳細</button>
+  </nav>
+  <button class="stop" id="btnStop" hidden>切断</button>
+</header>
+
+<main>
+  <!-- 接続画面 -->
+  <section class="view connect" id="viewConnect">
+    <h1>ローバーミニ MEMS診断</h1>
+    <p class="lead">Bluetoothアダプター（ATOM Lite）経由で、エンジンのコンピューター（MEMS 1.3）のデータを表示します。</p>
+    <p class="msg" id="connectMsg" hidden></p>
+    <div class="buttons">
+      <button class="primary" id="btnReconnect" hidden>もう一度つなぐ</button>
+      <button class="primary" id="btnConnect">Bluetoothで接続</button>
+      <button class="secondary" id="btnDemo">デモモードで開始</button>
+    </div>
+    <p class="note" id="supportNote"></p>
+    <p class="note">デモモード: 実車やアダプターが無くても、サンプルデータで画面をお試しいただけます。</p>
+  </section>
+
+  <!-- アナログメーター -->
+  <section class="view analog" id="viewAnalog" hidden>
+    <div class="dials" id="dials">
+      <div class="gauge" id="gauge0"><img class="face" alt=""><img class="needle" src="img/needle.png" alt=""><div class="digital"><span></span></div></div>
+      <div class="gauge" id="gauge1"><img class="face" alt=""><img class="needle" src="img/needle.png" alt=""><div class="digital"><span></span></div></div>
+    </div>
+    <div class="lamps" id="lamps"></div>
+    <button class="flip" id="btnFlip" aria-label="メーターを切り替え">⇆</button>
+  </section>
+
+  <!-- シンプル -->
+  <section class="view simple" id="viewSimple" hidden>
+    <div class="banner" id="bannerSimple"></div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <!-- 詳細 -->
+  <section class="view detail" id="viewDetail" hidden>
+    <div class="banner" id="bannerDetail"></div>
+    <table class="rows" id="detailRows"></table>
+    <h2>センサーエラー診断</h2>
+    <table class="rows" id="faultRows"></table>
+    <button class="secondary" id="btnClearFaults">エラークリア</button>
+    <p class="note" id="rateNote"></p>
+  </section>
+</main>
+
+<details class="diag" id="diag">
+  <summary>診断用の記録</summary>
+  <label><input type="checkbox" id="optRaw"> 送受信を全部記録する</label>
+  <div class="diag-buttons">
+    <button class="secondary" id="btnCopyLog">記録をコピー</button>
+    <button class="secondary" id="btnClearLog">記録を消す</button>
   </div>
-  <label class="opt"><input type="checkbox" id="optBurst"> 初期化をまとめ送りにする（普通の方法で失敗したとき用）</label>
-</div>
+  <pre id="log"></pre>
+  <p class="note"><a href="test.html">接続テスト用ページ</a></p>
+</details>
 
-<div class="card">
-  <div class="grid">
-    <div class="val"><div class="k">エンジン回転数</div><span class="v" id="vRpm">--</span><span class="u">rpm</span></div>
-    <div class="val"><div class="k">水温</div><span class="v" id="vCoolant">--</span><span class="u">℃</span></div>
-    <div class="val"><div class="k">バッテリー電圧</div><span class="v" id="vBatt">--</span><span class="u">V</span></div>
-    <div class="val"><div class="k">吸気温</div><span class="v" id="vIat">--</span><span class="u">℃</span></div>
-    <div class="val"><div class="k">吸気圧（MAP）</div><span class="v" id="vMap">--</span><span class="u">kPa</span></div>
-    <div class="val"><div class="k">スロットル電圧</div><span class="v" id="vTps">--</span><span class="u">V</span></div>
-  </div>
-  <div class="stats" id="stats"></div>
-</div>
+<dialog id="infoDialog">
+  <h3 id="infoTitle"></h3>
+  <p id="infoDesc"></p>
+  <p class="range" id="infoRange"></p>
+  <form method="dialog"><button class="primary">閉じる</button></form>
+</dialog>
 
-<div class="card">
-  <div class="row">
-    <button id="btnCopy" class="secondary">記録をコピー</button>
-    <button id="btnClear" class="secondary">記録を消す</button>
-  </div>
-  <div id="log"></div>
-</div>
-
-<script>
-'use strict';
-
-// ATOM Lite ファームの Nordic UART Service（アプリの BleUartProfiles.NORDIC_UART と同じ）
-const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const NUS_TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // スマホ → ECU
-const NUS_RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // ECU → スマホ（通知）
-
-// MemsProtocol.kt / MemsCommand.kt と同じ値
-const INIT_A = 0xCA, INIT_B = 0x75, HEARTBEAT = 0xF4, ID_REQUEST = 0xD0;
-const REQ_80 = 0x80, REQ_7D = 0x7D;
-const FRAME80_SIZE = 28, FRAME7D_SIZE = 32;
-const ECHO_TIMEOUT_MS = 1500, FRAME_TIMEOUT_MS = 3000;
-const TEMP_OFFSET_C = 55;
-const KNOWN_IDS = { '9A 00 02 02': 'MEMS 1.3（1996 ミニ SPi）' };
-
-const $ = (id) => document.getElementById(id);
-const t0 = performance.now();
-let device = null, txChar = null, rxChar = null;
-let rxBuf = [];
-let waiter = null;
-let running = false;
-let verbose = true; // 初期化中はすべての送受信を記録、データ取得が始まったら要約のみ
-
-// ---------- 記録 ----------
-const logLines = [];
-function hex(bytes) {
-  return Array.from(bytes, (b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-}
-function ts() { return ((performance.now() - t0) / 1000).toFixed(3).padStart(8, ' '); }
-function log(msg) {
-  const line = `${ts()}  ${msg}`;
-  logLines.push(line);
-  if (logLines.length > 2000) logLines.shift();
-  const el = $('log');
-  el.textContent += line + '\n';
-  if (el.textContent.length > 60000) el.textContent = el.textContent.slice(-40000);
-  el.scrollTop = el.scrollHeight;
-}
-function setStatus(text, cls) {
-  const el = $('status');
-  el.textContent = text;
-  el.className = cls || '';
-}
-
-// ---------- 受信バッファ ----------
-function onNotify(event) {
-  const dv = event.target.value;
-  const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-  for (const b of bytes) rxBuf.push(b);
-  if (verbose) log(`← ${hex(bytes)}`);
-  if (waiter && rxBuf.length >= waiter.n) {
-    const w = waiter;
-    waiter = null;
-    clearTimeout(w.timer);
-    w.resolve(rxBuf.splice(0, w.n));
-  }
-}
-function readExactly(n, timeoutMs) {
-  return new Promise((resolve) => {
-    if (rxBuf.length >= n) { resolve(rxBuf.splice(0, n)); return; }
-    const timer = setTimeout(() => { waiter = null; resolve(null); }, timeoutMs);
-    waiter = { n, resolve, timer };
-  });
-}
-function flushStale() {
-  if (rxBuf.length) {
-    log(`（読み捨て: ${hex(rxBuf)}）`);
-    rxBuf = [];
-  }
-}
-
-// ---------- 送信 ----------
-async function write(bytes) {
-  const data = new Uint8Array(bytes);
-  if (verbose) log(`→ ${hex(data)}`);
-  // ファームは応答なし書き込み(WRITE_NR)前提。古いブラウザ向けに通常書き込みへ退避
-  if (txChar.writeValueWithoutResponse) await txChar.writeValueWithoutResponse(data);
-  else await txChar.writeValue(data);
-}
-let lastSendAt = null;
-const sendGaps = [];
-async function sendCommand(cmd) {
-  flushStale();
-  const now = performance.now();
-  if (verbose && lastSendAt !== null) sendGaps.push(Math.round(now - lastSendAt));
-  lastSendAt = now;
-  await write([cmd]);
-  const echo = await readExactly(1, ECHO_TIMEOUT_MS);
-  if (!echo) { log(`✗ ${hex([cmd])} のエコーが返らない`); return false; }
-  if (echo[0] !== cmd) { log(`✗ ${hex([cmd])} のエコーが違う: ${hex(echo)}`); return false; }
-  return true;
-}
-
-// ---------- 初期化（MemsProtocol.initLink と同じ手順） ----------
-async function initLink(burst) {
-  const start = performance.now();
-  sendGaps.length = 0;
-  lastSendAt = null;
-  if (burst) {
-    log('初期化: CA 75 F4 をまとめ送り');
-    flushStale();
-    await write([INIT_A, INIT_B, HEARTBEAT]);
-    const echoes = await readExactly(3, ECHO_TIMEOUT_MS);
-    if (!echoes || hex(echoes) !== 'CA 75 F4') {
-      log(`✗ まとめ送りのエコーが違う: ${echoes ? hex(echoes) : 'なし'}`);
-      return null;
-    }
-  } else {
-    log('初期化: 1バイトずつ送信');
-    if (!(await sendCommand(INIT_A))) return null;
-    if (!(await sendCommand(INIT_B))) return null;
-    if (!(await sendCommand(HEARTBEAT))) return null;
-  }
-  // F4 のエコーの後に1バイト来る（本来 00）。来なくても先へ進む（アプリと同じ）
-  const follow = await readExactly(1, 1000);
-  if (!follow) log('△ F4 の後の1バイトが来なかった（続行）');
-  if (!(await sendCommand(ID_REQUEST))) return null;
-  const id = await readExactly(4, FRAME_TIMEOUT_MS);
-  if (!id) { log('✗ ECUの型番応答が来ない'); return null; }
-  const ms = Math.round(performance.now() - start);
-  log(`✓ 初期化成功 ${ms}ms　型番 ${hex(id)}`);
-  if (sendGaps.length) log(`  コマンド送信の間隔: ${sendGaps.join(', ')} ms`);
-  return hex(id);
-}
-
-// ---------- データ取得 ----------
-function showFrame80(b) {
-  $('vRpm').textContent = (b[1] << 8) | b[2];
-  $('vCoolant').textContent = b[3] - TEMP_OFFSET_C;
-  $('vIat').textContent = b[5] - TEMP_OFFSET_C;
-  $('vMap').textContent = b[7];
-  $('vBatt').textContent = (b[8] / 10).toFixed(1);
-  $('vTps').textContent = (b[9] * 0.02).toFixed(2);
-}
-async function pollLoop() {
-  let count = 0, fails = 0;
-  let windowStart = performance.now();
-  while (running) {
-    const ok80 = await sendCommand(REQ_80);
-    const f80 = ok80 ? await readExactly(FRAME80_SIZE, FRAME_TIMEOUT_MS) : null;
-    const ok7d = f80 ? await sendCommand(REQ_7D) : false;
-    const f7d = ok7d ? await readExactly(FRAME7D_SIZE, FRAME_TIMEOUT_MS) : null;
-    if (!running) break;
-    if (!f80 || !f7d) {
-      fails++;
-      log(`✗ データ取得失敗（連続${fails}回）`);
-      if (fails >= 3) { setStatus('データが取れなくなりました', 'ng'); break; }
-      continue;
-    }
-    fails = 0;
-    count++;
-    showFrame80(f80);
-    if (count === 1) log(`✓ 最初のデータ 80: ${hex(f80)}`);
-    if (count % 20 === 0) {
-      const per = (performance.now() - windowStart) / 20;
-      windowStart = performance.now();
-      const text = `取得 ${count} 回　1回あたり ${Math.round(per)}ms（毎秒 ${(1000 / per).toFixed(1)} 回）`;
-      $('stats').textContent = text;
-      log(text);
-    }
-  }
-}
-
-// ---------- 接続・切断 ----------
-async function connect() {
-  $('btnConnect').disabled = true;
-  try {
-    setStatus('ATOM Lite を探しています…');
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'RoverMEMS' }],
-      optionalServices: [NUS_SERVICE],
-    });
-    log(`機器: ${device.name}`);
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-    setStatus('接続中…');
-    const tConn = performance.now();
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(NUS_SERVICE);
-    txChar = await service.getCharacteristic(NUS_TX);
-    rxChar = await service.getCharacteristic(NUS_RX);
-    rxChar.addEventListener('characteristicvaluechanged', onNotify);
-    await rxChar.startNotifications();
-    log(`Bluetooth接続 ${Math.round(performance.now() - tConn)}ms`);
-    $('btnDisconnect').disabled = false;
-
-    setStatus('ECUを初期化しています…');
-    verbose = true;
-    const id = await initLink($('optBurst').checked);
-    if (!id) {
-      setStatus('初期化に失敗しました（記録をコピーして送ってください）', 'ng');
-      return;
-    }
-    setStatus(`ECU接続OK：${KNOWN_IDS[id] || 'ID ' + id}`, 'ok');
-    verbose = false;
-    running = true;
-    await pollLoop();
-  } catch (e) {
-    log(`エラー: ${e.name} ${e.message}`);
-    if (e.name === 'NotFoundError') setStatus('機器の選択がキャンセルされました');
-    else setStatus(`エラー: ${e.message}`, 'ng');
-  } finally {
-    running = false;
-    if (!device || !device.gatt.connected) {
-      $('btnConnect').disabled = false;
-      $('btnDisconnect').disabled = true;
-    }
-  }
-}
-function onDisconnected() {
-  running = false;
-  log('切断されました');
-  setStatus('切断されました', 'warn');
-  $('btnConnect').disabled = false;
-  $('btnDisconnect').disabled = true;
-}
-function disconnect() {
-  running = false;
-  if (device && device.gatt.connected) device.gatt.disconnect();
-}
-
-// ---------- 画面 ----------
-$('btnConnect').addEventListener('click', connect);
-$('btnDisconnect').addEventListener('click', disconnect);
-$('btnClear').addEventListener('click', () => { logLines.length = 0; $('log').textContent = ''; });
-$('btnCopy').addEventListener('click', async () => {
-  const text = `${navigator.userAgent}\n` + logLines.join('\n');
-  try {
-    await navigator.clipboard.writeText(text);
-    $('btnCopy').textContent = 'コピーしました';
-  } catch (e) {
-    // クリップボードが使えないブラウザ向け：記録欄を全選択して手動コピー
-    const range = document.createRange();
-    range.selectNodeContents($('log'));
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    $('btnCopy').textContent = '選択しました（コピーしてください）';
-  }
-  setTimeout(() => { $('btnCopy').textContent = '記録をコピー'; }, 2500);
-});
-
-if (!navigator.bluetooth) {
-  $('support').innerHTML = '<span class="ng">このブラウザはBluetoothに対応していません。iPhoneではBluefy、AndroidではChromeで開いてください。</span>';
-  $('btnConnect').disabled = true;
-} else {
-  $('support').textContent = 'Bluetooth 対応ブラウザです';
-}
-log('ページ読み込み');
-</script>
+<script src="app.js"></script>
 </body>
 </html>
