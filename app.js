@@ -666,7 +666,7 @@ function buildStatic() {
     name.textContent = a.label;
     if (a.unsupported) {
       const note = document.createElement('small');
-      note.textContent = 'このミニはECUから動かない配線';
+      note.textContent = '電動ファンはECU制御ではありません';
       name.append(note);
     }
     const buttons = document.createElement('div');
