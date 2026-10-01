@@ -121,6 +121,21 @@ const FAULTS = [
   { key: 'throttle', lamp: 'スロットル', label: 'スロットルポット回路エラー' },
 ];
 
+// 部品テスト（Android版 ActuatorControls.kt / MemsCommand.kt と同じ）。
+// MEMSFCRにある「Temperature Gauge」はコマンド値が未確認のため入れない
+const ACTUATORS = [
+  { label: '燃料ポンプ', on: 0x11, off: 0x01 },
+  { label: 'マニホールドヒーター', on: 0x12, off: 0x02 },
+  { label: 'エアコン', on: 0x13, off: 0x03 },
+  { label: 'パージバルブ', on: 0x18, off: 0x08 },
+  { label: 'ラムダヒーター', on: 0x19, off: 0x09 },
+  // このミニはファンを水温スイッチで直接動かす配線で、ECUからは動かない（実車確認済み）
+  { label: 'ファン1', on: 0x1D, off: 0x0D, unsupported: true },
+  { label: 'ファン2', on: 0x1E, off: 0x0E, unsupported: true },
+  { label: 'インジェクター', on: 0xF7 },
+  { label: 'イグニッションコイル', on: 0xF8 },
+];
+
 // =====================================================================
 // 小物
 // =====================================================================
@@ -327,7 +342,8 @@ function parseFrames(f80, f7d) {
 let session = 0; // 切断・デモ開始などで増やし、古いループを止める
 let userStopped = true;
 let ecuId = null;
-let pendingClear = null;
+// エラークリア・部品テストなど、データ取得の合間に送る1回きりのコマンド
+const commandQueue = [];
 let demoTimer = null;
 
 async function establish(my, attempts) {
@@ -356,11 +372,11 @@ async function pollLoop(my) {
   let rateStart = performance.now();
   setState('connected');
   while (my === session) {
-    if (pendingClear) {
-      const resolve = pendingClear;
-      pendingClear = null;
-      const ok = (await sendCommand(CMD.CLEAR_FAULTS)) && (await readExactly(1, ECHO_TIMEOUT_MS)) !== null;
-      log(ok ? '✓ エラークリア' : '✗ エラークリア失敗');
+    while (commandQueue.length && my === session) {
+      const { cmd, label, resolve } = commandQueue.shift();
+      // エラークリア・部品テストとも、エコーの後に1バイト返ってくる（MemsProtocol.kt と同じ）
+      const ok = (await sendCommand(cmd)) && (await readExactly(1, ECHO_TIMEOUT_MS)) !== null;
+      log(`${ok ? '✓' : '✗'} ${label}（${hex([cmd])}）`);
       resolve(ok);
     }
     if (!device.gatt.connected) return;
@@ -427,7 +443,7 @@ async function runBle() {
 
 function failConnection(message) {
   session++;
-  resolvePendingClear(false);
+  failQueuedCommands();
   releaseWakeLock();
   try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e) { /* 無視 */ }
   setState('error', message);
@@ -463,20 +479,20 @@ function stopAll() {
   userStopped = true;
   session++;
   abortRead();
-  resolvePendingClear(false);
+  failQueuedCommands();
   if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
   try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e) { /* 無視 */ }
   releaseWakeLock();
   setState('idle');
 }
 
-function resolvePendingClear(value) {
-  if (pendingClear) { pendingClear(value); pendingClear = null; }
+function failQueuedCommands() {
+  while (commandQueue.length) commandQueue.shift().resolve(false);
 }
-function clearFaults() {
-  if (state === 'demo') return Promise.resolve(true);
+function queueCommand(cmd, label) {
+  if (state === 'demo') { log(`（デモ）${label}`); return Promise.resolve(true); }
   if (state !== 'connected') return Promise.resolve(false);
-  return new Promise((resolve) => { pendingClear = resolve; });
+  return new Promise((resolve) => { commandQueue.push({ cmd, label, resolve }); });
 }
 
 // ---------- 画面を消さない（運転中に見るため） ----------
@@ -564,12 +580,17 @@ function setState(next, message) {
   $('connectMsg').textContent = message || '';
   $('btnReconnect').hidden = !(next === 'error' && device);
   $('btnConnect').textContent = next === 'error' && device ? '別のアダプターを選ぶ' : 'Bluetoothで接続';
-  if (next === 'idle' || next === 'error') lastData = null;
+  if (next === 'idle' || next === 'error') {
+    lastData = null;
+    updateActuatorAvailability(null);
+  }
   showView(live ? view : 'connect');
 }
 
 function showView(name) {
-  const sections = { connect: 'viewConnect', analog: 'viewAnalog', simple: 'viewSimple', detail: 'viewDetail' };
+  const sections = {
+    connect: 'viewConnect', analog: 'viewAnalog', simple: 'viewSimple', detail: 'viewDetail', actuator: 'viewActuator',
+  };
   for (const [key, id] of Object.entries(sections)) $(id).hidden = key !== name;
   document.body.classList.toggle('mode-analog', name === 'analog');
   for (const b of $('tabs').querySelectorAll('button')) b.classList.toggle('active', b.dataset.view === name);
@@ -636,6 +657,40 @@ function buildStatic() {
     });
     cards.appendChild(card);
   }
+  // 部品テストの行
+  for (const a of ACTUATORS) {
+    const row = document.createElement('div');
+    row.className = 'act-row';
+    const name = document.createElement('div');
+    name.className = 'act-name';
+    name.textContent = a.label;
+    if (a.unsupported) {
+      const note = document.createElement('small');
+      note.textContent = 'このミニはECUから動かない配線';
+      name.append(note);
+    }
+    const buttons = document.createElement('div');
+    buttons.className = 'act-buttons';
+    const addButton = (text, cmd) => {
+      const b = document.createElement('button');
+      b.className = 'primary act-btn';
+      b.textContent = text;
+      if (a.unsupported) b.dataset.unsupported = '1';
+      b.addEventListener('click', async () => {
+        const ok = await queueCommand(cmd, `${a.label} ${text}`);
+        showActuatorResult(`${a.label}${a.off != null ? ` ${text}` : ''}: ${ok ? '実行しました' : '実行に失敗しました'}`, ok);
+      });
+      buttons.append(b);
+    };
+    if (a.off == null) {
+      addButton('テスト実行', a.on);
+    } else {
+      addButton('ON', a.on);
+      addButton('OFF', a.off);
+    }
+    row.append(name, buttons);
+    $('actRows').appendChild(row);
+  }
   // アナログ画面のエラーランプ
   for (const f of FAULTS) {
     const lamp = document.createElement('span');
@@ -691,8 +746,28 @@ function fillTable(table, rows, cellClass) {
   });
 }
 
+let actResultTimer = null;
+function showActuatorResult(text, ok) {
+  const el = $('actResult');
+  el.textContent = text;
+  el.className = 'act-result ' + (ok ? 'ok' : 'ng');
+  el.hidden = false;
+  clearTimeout(actResultTimer);
+  actResultTimer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
+// 安全のため、回転数0（エンジン停止）を確認できた時だけ部品テストを押せる（Android版と同じ）
+function updateActuatorAvailability(d) {
+  const canTest = d != null && d.rpm === 0;
+  const status = $('actStatus');
+  status.textContent = canTest ? 'テスト可能' : 'エンジン停止時のみ';
+  status.className = 'act-status ' + (canTest ? 'ok' : 'ng');
+  for (const b of document.querySelectorAll('.act-btn')) b.disabled = !canTest || b.dataset.unsupported === '1';
+}
+
 function render(d) {
   lastData = d;
+  updateActuatorAvailability(d);
   if (view === 'analog' && !$('viewAnalog').hidden) {
     DIAL_SIDES[dialSide].forEach((key, slot) => {
       const dial = DIALS[key];
@@ -729,7 +804,7 @@ function wireUi() {
     if (!confirm('ECUに記録されたエラーを消去します。よろしいですか？')) return;
     const btn = $('btnClearFaults');
     btn.disabled = true;
-    const ok = await clearFaults();
+    const ok = await queueCommand(CMD.CLEAR_FAULTS, 'エラークリア');
     btn.disabled = false;
     alert(ok ? 'エラーコードをクリアしました' : 'クリアに失敗しました');
   });

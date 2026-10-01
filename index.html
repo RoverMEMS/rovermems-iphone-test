@@ -15,6 +15,7 @@
     <button data-view="analog">アナログ</button>
     <button data-view="simple">シンプル</button>
     <button data-view="detail">詳細</button>
+    <button data-view="actuator">部品テスト</button>
   </nav>
   <button class="stop" id="btnStop" hidden>切断</button>
 </header>
@@ -58,6 +59,16 @@
     <table class="rows" id="faultRows"></table>
     <button class="secondary" id="btnClearFaults">エラークリア</button>
     <p class="note" id="rateNote"></p>
+  </section>
+
+  <!-- 部品テスト -->
+  <section class="view actuator" id="viewActuator" hidden>
+    <div class="act-card">
+      <p>各部品・センサーを手動でテストできます。ONにすると正常ならリレーの動作音がします。</p>
+      <div class="act-status" id="actStatus">エンジン停止時のみ</div>
+    </div>
+    <div class="act-result" id="actResult" hidden></div>
+    <div id="actRows"></div>
   </section>
 </main>
 

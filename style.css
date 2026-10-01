@@ -45,6 +45,7 @@ button:disabled { opacity: 0.4; }
 .badge.demo { background: #6a5acd; color: #fff; }
 .tabs { display: flex; gap: 2px; margin-left: auto; background: #34312c; border-radius: 9px; padding: 2px; }
 .tabs button {
+  white-space: nowrap;
   padding: 6px 10px; font-size: 13px; border-radius: 7px; background: transparent; color: var(--bar-text);
 }
 .tabs button.active { background: var(--bar-text); color: var(--bar); }
@@ -153,3 +154,32 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 dialog h3 { margin: 0 0 8px; }
 dialog .range { color: var(--muted); font-size: 14px; }
 dialog button { width: 100%; }
+
+/* ---------- 部品テスト ---------- */
+.actuator { max-width: 640px; margin: 0 auto; padding: 12px 0 16px; }
+.act-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.act-card p { margin: 0; font-size: 14px; }
+.act-status { font-size: 20px; font-weight: 700; margin-top: 6px; }
+.act-status.ok { color: var(--accent); }
+.act-status.ng { color: var(--ng); }
+.act-result { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-weight: 600; }
+.act-result.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.act-result.ng { background: color-mix(in srgb, var(--ng) 15%, transparent); color: var(--ng); }
+.act-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px;
+}
+.act-name { font-weight: 600; }
+.act-name small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.act-buttons { display: flex; gap: 8px; flex-shrink: 0; }
+.act-buttons button { padding: 8px 14px; min-width: 60px; }
+
+/* 幅の狭い画面（スマホ縦）ではタブを2段目に回す */
+@media (max-width: 560px) {
+  :root { --bar-h: 92px; }
+  .bar { flex-wrap: wrap; row-gap: 6px; }
+  .badge { max-width: none; }
+  .stop { margin-left: auto; }
+  .tabs { order: 3; width: 100%; margin-left: 0; }
+  .tabs button { flex: 1; padding: 6px 4px; }
+}
