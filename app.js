@@ -848,7 +848,7 @@ function formatClock(date, withMs) {
   return withMs ? `${base}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}` : base;
 }
 function logFileName(date) {
-  return `memsgauge_${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+  return `rovermems_${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
     + `_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.csv`;
 }
 // Kotlin の Float と同じ書き方（14 → "14.0"、0.56 → "0.56"）
