@@ -1141,8 +1141,7 @@ function detailRows(d) {
     [L('IACポジション', 'IAC Position'), `${d.iac}`],
     [L('バッテリー電圧', 'Battery Voltage'), `${d.battery.toFixed(2)} V`],
     [L('空燃比', 'Air/Fuel Ratio'), num(d.afr, 1)],
-    [L('ラムダセンサー周波数', 'Lambda Sensor Frequency'), num(d.lambdaFreq)],
-    [L('ラムダセンサーデューティ比', 'Lambda Sensor Duty Cycle'), num(d.lambdaDuty)],
+    // ラムダセンサー周波数・デューティ比とキャニスターパージは、このECUでは未使用（MEMSFCR）なので出さない。ログには残す
     [L('ラムダセンサー状態', 'Lambda Sensor Status'), onOff(d.lambdaStatus)],
     [L('クローズドループ', 'Closed Loop'), onOff(d.closedLoop)],
     [L('アイドルベース位置', 'Idle Base Position'), num(d.idleBase)],
@@ -1150,7 +1149,6 @@ function detailRows(d) {
     [L('点火進角', 'Ign. Advance'), `${d.ignition.toFixed(1)} °`],
     [L('燃料トリム(長期)', 'Fuel Trim (Long)'), d.ltft == null ? '--' : signed(d.ltft)],
     [L('燃料トリム(短期)', 'Fuel Trim (Short)'), d.stft == null ? '--' : signed(d.stft)],
-    [L('キャニスターパージデューティ比', 'Canister Purge Duty Cycle'), num(d.canister)],
     [L('アイドルスイッチ', 'Idle Switch'), d.idleSwitch ? 'ON' : 'OFF'],
     [L('パーキング/ニュートラルスイッチ', 'Park/Neutral Switch'), d.parkNeutral ? 'ON' : 'OFF'],
     [L('コイル時間', 'Coil Time'), `${Math.round(d.coilMs * 1000)} µs`],
