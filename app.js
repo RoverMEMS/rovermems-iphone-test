@@ -44,7 +44,7 @@ const LOG_HEADER = '#time,engineSpeed,waterTemp,intakeAirTemp,throttleVoltage,'
   + 'coolantTempSensorFault,intakeAirTempSensorFault,fuelPumpCircuitFault,throttlePotCircuitFault,'
   + 'idleSpeedDeviation,idleError,idleBasePos,ignitionAdvance,coilTime,'
   + 'lambdaFrequency,lambdaDutyCycle,lambdaStatus,longTermFuelTrim,shortTermFuelTrim,'
-  + 'purgeDutyCycle,dtc2,dtc3,dtc4';
+  + 'purgeDutyCycle,dtc2,dtc3,dtc4,idleHot,idleSpeedOffset';
 const MAX_LOG_FILES = 50;
 const LOG_AUTO_STOP_AFTER_MS = 30000;
 const LOG_FLUSH_INTERVAL_MS = 3000;
@@ -551,12 +551,14 @@ function parseFrames(f80, f7d) {
     // アイドルスイッチは offset 18 の bit4（MemsData.kt のコメント参照）
     idleSwitch: (f80[18] & 0x10) !== 0,
     iac: f80[18],
+    // MEMSFCRの解析で使う生の値（ログ解析ツール用）
+    idleHot: f80[16],
     idleDeviation: (f80[19] << 8) | f80[20],
     ignition: f80[22] * 0.5 - 24,
     coilMs: ((f80[23] << 8) | f80[24]) * 0.002,
     throttleAngle: null, afr: null, lambdaMv: null, lambdaFreq: null, lambdaDuty: null,
     lambdaStatus: null, closedLoop: null, ltft: null, stft: null, canister: null,
-    idleBase: null, idleError: null, dtc2: null, dtc3: null, dtc4: null,
+    idleBase: null, idleError: null, dtc2: null, dtc3: null, dtc4: null, idleSpeedOffset: null,
   };
   if (f7d) {
     Object.assign(d, {
@@ -576,6 +578,7 @@ function parseFrames(f80, f7d) {
       dtc2: f7d[5],
       dtc3: f7d[14],
       dtc4: f7d[17],
+      idleSpeedOffset: f7d[19],
     });
   }
   return d;
@@ -799,7 +802,7 @@ function startDemo() {
       idleSwitch: rev === 0, iac: 45, idleDeviation: Math.round(wobble), ignition: 12 + rev * 18,
       coilMs: 3.2, throttleAngle: rev * 40, afr: 14.7, lambdaMv: Math.round(450 + Math.sin(sec * 5) * 380),
       lambdaFreq: 12, lambdaDuty: 50, lambdaStatus: true, closedLoop: rev === 0, ltft: 2, stft: 0,
-      canister: 0, idleBase: 30, idleError: 0, ambient: 200, fuelTemp: 200, dtc2: 0, dtc3: 0, dtc4: 0,
+      canister: 0, idleBase: 30, idleError: 0, ambient: 200, fuelTemp: 200, dtc2: 0, dtc3: 0, dtc4: 0, idleHot: 30, idleSpeedOffset: 0,
     }, false);
   }, 250);
 }
@@ -902,7 +905,7 @@ function logSample(d) {
     d.faults.coolant, d.faults.intake, d.faults.fuelPump, d.faults.throttle,
     d.idleDeviation, d.idleError ?? '', d.idleBase ?? '', fixed(d.ignition, 1), fixed(d.coilMs, 3),
     d.lambdaFreq ?? '', d.lambdaDuty ?? '', d.lambdaStatus ?? '', d.ltft ?? '', d.stft ?? '',
-    d.canister ?? '', hexByte(d.dtc2), hexByte(d.dtc3), hexByte(d.dtc4),
+    d.canister ?? '', hexByte(d.dtc2), hexByte(d.dtc3), hexByte(d.dtc4), d.idleHot ?? '', d.idleSpeedOffset ?? '',
   ].join(','));
 }
 function flushLog() {
