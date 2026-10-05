@@ -28,6 +28,8 @@ const POLL_FAILS_BEFORE_RECONNECT = 3;
 // （iPhone実車で両方毎回だと毎秒2.3回だった）
 const FRAME7D_EVERY = 2;
 const TEMP_OFFSET_C = 55;
+// 短期燃料トリムの基準値（MEMSFCRの rosco.go と同じ。実車でもオープンループ中は100ちょうど）
+const STFT_CENTER = 100;
 const FUEL_TRIM_CENTER = 128;
 // 実車で確認できたECU型番だけ名前で出す（それ以外は生のIDを表示。Android版 EcuVersion.kt と同じ）
 const MEMS13_ECU_IDS = ['9A 00 02 02'];
@@ -349,7 +351,6 @@ const LOG_COLUMNS = [
   ['mainVoltage', { ja: 'バッテリー電圧(V)', en: 'Battery Voltage (V)' }],
   ['lambdaVoltage_mV', { ja: 'ラムダ電圧(mV)', en: 'Lambda Voltage (mV)' }],
   ['throttleAngle', { ja: 'スロットル開度(°)', en: 'Throttle Angle (°)' }],
-  ['airFuelRatio', { ja: '空燃比', en: 'Air/Fuel Ratio' }],
   ['ignitionAdvance', { ja: '点火進角(°)', en: 'Ignition Advance (°)' }],
   ['coilTime', { ja: 'コイル時間(ms)', en: 'Coil Time (ms)' }],
   ['longTermFuelTrim', { ja: '燃料トリム(長期)', en: 'Fuel Trim (Long)' }],
@@ -567,7 +568,7 @@ function parseFrames(f80, f7d) {
       lambdaStatus: f7d[9] !== 0,
       closedLoop: f7d[10] !== 0,
       ltft: f7d[11] - FUEL_TRIM_CENTER,
-      stft: f7d[12],
+      stft: f7d[12] - STFT_CENTER,
       canister: f7d[13],
       idleBase: f7d[15],
       idleError: f7d[20],
@@ -1140,8 +1141,7 @@ function detailRows(d) {
     [L('ラムダ電圧', 'Lambda Voltage'), num(d.lambdaMv, null, ' mV')],
     [L('IACポジション', 'IAC Position'), `${d.iac}`],
     [L('バッテリー電圧', 'Battery Voltage'), `${d.battery.toFixed(2)} V`],
-    [L('空燃比', 'Air/Fuel Ratio'), num(d.afr, 1)],
-    // ラムダセンサー周波数・デューティ比とキャニスターパージは、このECUでは未使用（MEMSFCR）なので出さない。ログには残す
+    // ラムダセンサー周波数・デューティ比（常に255）と空燃比（実車で14.6固定）は出さない。ログには残す
     [L('ラムダセンサー状態', 'Lambda Sensor Status'), onOff(d.lambdaStatus)],
     [L('クローズドループ', 'Closed Loop'), onOff(d.closedLoop)],
     [L('アイドルベース位置', 'Idle Base Position'), num(d.idleBase)],
@@ -1149,6 +1149,8 @@ function detailRows(d) {
     [L('点火進角', 'Ign. Advance'), `${d.ignition.toFixed(1)} °`],
     [L('燃料トリム(長期)', 'Fuel Trim (Long)'), d.ltft == null ? '--' : signed(d.ltft)],
     [L('燃料トリム(短期)', 'Fuel Trim (Short)'), d.stft == null ? '--' : signed(d.stft)],
+    // MEMSFCRのサイトでは未使用とあるが、実車（10-05）では0〜80で動いていた
+    [L('キャニスターパージデューティ比', 'Canister Purge Duty Cycle'), num(d.canister)],
     [L('アイドルスイッチ', 'Idle Switch'), d.idleSwitch ? 'ON' : 'OFF'],
     [L('パーキング/ニュートラルスイッチ', 'Park/Neutral Switch'), d.parkNeutral ? 'ON' : 'OFF'],
     [L('コイル時間', 'Coil Time'), `${Math.round(d.coilMs * 1000)} µs`],
