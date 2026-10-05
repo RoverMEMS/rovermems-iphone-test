@@ -28,8 +28,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 [hidden] { display: none !important; }
 
 /* ウェブからは画面の明るさを変えられないので黒い膜で暗くする。iPhoneは自動調光で夜は画面自体も暗くなり、
-   膜と重なって暗くなりすぎるため、Android版(明るさ12%固定)より薄めにしている */
-#nightOverlay { position: fixed; inset: 0; background: #000; opacity: 0.4; pointer-events: none; z-index: 100; }
+   膜と重なって暗くなりすぎるため、ボタンで選んだ時だけ・薄めにかける（app.js の AUTO_NIGHT） */
+#nightOverlay { position: fixed; inset: 0; background: #000; opacity: 0.25; pointer-events: none; z-index: 100; }
 
 /* ---------- 上のバー ---------- */
 .bar {

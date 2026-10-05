@@ -1051,9 +1051,13 @@ function updateBar() {
   $('btnAnalogReconnect').hidden = !reconnecting;
 }
 
-// ---------- 夜間モード（時間帯で自動、ボタンでその場だけ切り替え） ----------
+// ---------- 夜間モード（ボタンで切り替え） ----------
+// iPhoneは自動調光で夜は画面そのものが暗くなり、時間帯で自動オンにすると二重に暗くなりすぎた
+// （10-06 カイさん）。なのでiPhone版は自動ではオンにせず、ボタンを押した時だけ薄く暗くする
+const AUTO_NIGHT = false;
 let nightOverride = null;
 function isAutoNight() {
+  if (!AUTO_NIGHT) return false;
   const h = new Date().getHours();
   return h >= NIGHT_START_HOUR || h < NIGHT_END_HOUR;
 }
